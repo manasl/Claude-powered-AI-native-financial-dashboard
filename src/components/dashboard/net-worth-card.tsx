@@ -2,26 +2,41 @@ import { TrendingUp, TrendingDown } from "lucide-react";
 import { PortfolioSnapshot } from "@/lib/types/portfolio";
 import { formatCurrency, formatPercent, gainLossColor, cn } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
+import type { ManualAsset, ManualDebt } from "@/lib/queries/manual-accounts";
 
 interface NetWorthCardProps {
   snapshot: PortfolioSnapshot;
-  manualAssetsTotal?: number;
-  manualDebtsTotal?: number;
+  manualAssets?: ManualAsset[];
+  manualDebts?: ManualDebt[];
 }
 
 export function NetWorthCard({
   snapshot,
-  manualAssetsTotal = 0,
-  manualDebtsTotal = 0,
+  manualAssets = [],
+  manualDebts = [],
 }: NetWorthCardProps) {
   const { total_value, total_cost_basis, total_gain_loss, total_positions } = snapshot;
-  // snapshot is used directly below for account_categories_json
   const gainLossPct =
     total_cost_basis > 0 ? (total_gain_loss / total_cost_basis) * 100 : 0;
   const isPositive = total_gain_loss >= 0;
 
-  const trueNetWorth = total_value + manualAssetsTotal - manualDebtsTotal;
-  const hasManual = manualAssetsTotal > 0 || manualDebtsTotal > 0;
+  // Liquid cash from Plaid (checking/savings) — stored separately from investment total_value
+  const liquidValue = snapshot.account_categories_json?.liquid?.value ?? 0;
+
+  // Split manual assets by category
+  const manualRetirementTotal = manualAssets
+    .filter((a) => a.category === "retirement")
+    .reduce((s, a) => s + a.balance, 0);
+  const manualOtherTotal = manualAssets
+    .filter((a) => a.category !== "retirement")
+    .reduce((s, a) => s + a.balance, 0);
+  const manualAssetsTotal = manualRetirementTotal + manualOtherTotal;
+  const manualDebtsTotal = manualDebts.reduce((s, d) => s + d.balance, 0);
+
+  // total_value = Plaid investment positions (taxable + retirement IRA/Roth)
+  // liquidValue = Plaid cash accounts (checking/savings) — separate from positions
+  const trueNetWorth = total_value + liquidValue + manualAssetsTotal - manualDebtsTotal;
+  const hasManual = manualAssetsTotal > 0 || manualDebtsTotal > 0 || liquidValue > 0;
 
   return (
     <Card className="md:col-span-2">
@@ -54,32 +69,34 @@ export function NetWorthCard({
             </span>
           </div>
 
-          {/* Breakdown — only shown when manual accounts exist */}
+          {/* Breakdown — always shown so numbers are traceable */}
           {hasManual && (
             <div className="mt-3 pt-3 border-t border-white/6 space-y-1">
               {snapshot.account_categories_json ? (
                 <>
                   {snapshot.account_categories_json.taxable && (
                     <div className="flex justify-between text-xs text-gray-400">
-                      <span>Taxable (Plaid)</span>
+                      <span>Taxable</span>
                       <span className="font-mono text-white">
                         {formatCurrency(snapshot.account_categories_json.taxable.value, 0)}
                       </span>
                     </div>
                   )}
-                  {snapshot.account_categories_json.retirement && (
+                  {/* Retirement = Plaid IRAs + manual 401k/HSA combined */}
+                  {(snapshot.account_categories_json.retirement || manualRetirementTotal > 0) && (
                     <div className="flex justify-between text-xs text-gray-400">
-                      <span>Retirement (Plaid)</span>
+                      <span>Retirement {manualRetirementTotal > 0 && snapshot.account_categories_json.retirement ? "(Plaid + manual)" : manualRetirementTotal > 0 ? "(manual)" : "(Plaid)"}</span>
                       <span className="font-mono text-white">
-                        {formatCurrency(snapshot.account_categories_json.retirement.value, 0)}
+                        {formatCurrency((snapshot.account_categories_json.retirement?.value ?? 0) + manualRetirementTotal, 0)}
                       </span>
                     </div>
                   )}
-                  {snapshot.account_categories_json.liquid && (
+                  {/* Liquid is now counted in total — show it clearly */}
+                  {liquidValue > 0 && (
                     <div className="flex justify-between text-xs text-gray-400">
-                      <span>Liquid (Plaid)</span>
+                      <span>Cash & Liquid</span>
                       <span className="font-mono text-white">
-                        {formatCurrency(snapshot.account_categories_json.liquid.value, 0)}
+                        {formatCurrency(liquidValue, 0)}
                       </span>
                     </div>
                   )}
@@ -90,10 +107,10 @@ export function NetWorthCard({
                   <span className="font-mono text-white">{formatCurrency(total_value, 0)}</span>
                 </div>
               )}
-              {manualAssetsTotal > 0 && (
+              {manualOtherTotal > 0 && (
                 <div className="flex justify-between text-xs text-gray-400">
                   <span>Other Assets</span>
-                  <span className="font-mono text-green-400">+{formatCurrency(manualAssetsTotal, 0)}</span>
+                  <span className="font-mono text-green-400">+{formatCurrency(manualOtherTotal, 0)}</span>
                 </div>
               )}
               {manualDebtsTotal > 0 && (

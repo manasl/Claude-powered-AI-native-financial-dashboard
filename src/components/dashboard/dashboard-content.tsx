@@ -35,8 +35,6 @@ export function DashboardContent({
   manualDebts,
   rsuGrants,
 }: DashboardContentProps) {
-  const manualAssetsTotal = manualAssets.reduce((s, a) => s + a.balance, 0);
-  const manualDebtsTotal = manualDebts.reduce((s, d) => s + d.balance, 0);
   const hasCategories = !!snapshot.account_categories_json;
 
   return (
@@ -46,8 +44,8 @@ export function DashboardContent({
         <div className="md:col-span-2 xl:col-span-3">
           <NetWorthCard
             snapshot={snapshot}
-            manualAssetsTotal={manualAssetsTotal}
-            manualDebtsTotal={manualDebtsTotal}
+            manualAssets={manualAssets}
+            manualDebts={manualDebts}
           />
         </div>
         <div className="flex flex-col gap-4">
