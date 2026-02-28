@@ -9,12 +9,13 @@ import {
   getLatestRecommendations,
 } from "@/lib/queries/analysis";
 import { getManualAssets, getManualDebts } from "@/lib/queries/manual-accounts";
+import { getRsuGrants } from "@/lib/queries/rsu";
 import { DashboardContent } from "@/components/dashboard/dashboard-content";
 
 export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
-  const [snapshot, analysis, recommendations, holdings, enrichment, manualAssets, manualDebts] =
+  const [snapshot, analysis, recommendations, holdings, enrichment, manualAssets, manualDebts, rsuGrants] =
     await Promise.all([
       getLatestSnapshot(),
       getLatestAnalysis(),
@@ -23,6 +24,7 @@ export default async function DashboardPage() {
       getLatestEnrichment(),
       getManualAssets(),
       getManualDebts(),
+      getRsuGrants(),
     ]);
 
   return (
@@ -41,6 +43,7 @@ export default async function DashboardPage() {
               enrichment={enrichment}
               manualAssets={manualAssets}
               manualDebts={manualDebts}
+              rsuGrants={rsuGrants}
             />
           )}
         </div>

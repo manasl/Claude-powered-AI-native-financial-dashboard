@@ -5,13 +5,22 @@ export const BROKERAGE_CONFIG: Record<
   Brokerage,
   { bg: string; text: string; border: string; label: string }
 > = {
-  Stash:     { bg: "#1d4ed8", text: "#93c5fd", border: "#1e40af", label: "Stash" },
-  Robinhood: { bg: "#065f46", text: "#6ee7b7", border: "#064e3b", label: "Robinhood" },
-  Sofi:      { bg: "#6b21a8", text: "#d8b4fe", border: "#581c87", label: "SoFi" },
-  Acorns:    { bg: "#92400e", text: "#fcd34d", border: "#78350f", label: "Acorns" },
+  Stash:      { bg: "#1d4ed8", text: "#93c5fd", border: "#1e40af", label: "Stash" },
+  Robinhood:  { bg: "#065f46", text: "#6ee7b7", border: "#064e3b", label: "Robinhood" },
+  Sofi:       { bg: "#6b21a8", text: "#d8b4fe", border: "#581c87", label: "SoFi" },
+  Acorns:     { bg: "#92400e", text: "#fcd34d", border: "#78350f", label: "Acorns" },
+  Wealthfront: { bg: "#0f766e", text: "#5eead4", border: "#0d9488", label: "Wealthfront" },
 };
 
-export const BROKERAGES: Brokerage[] = ["Stash", "Robinhood", "Sofi", "Acorns"];
+export const BROKERAGES: Brokerage[] = ["Stash", "Robinhood", "Sofi", "Acorns", "Wealthfront"];
+
+// ── Account category config ────────────────────────────────────────────────
+export const ACCOUNT_CATEGORY_CONFIG = {
+  taxable:    { color: "#6366f1", bg: "#1e1b4b", border: "#312e81", label: "Taxable",    icon: "📈" },
+  retirement: { color: "#10b981", bg: "#064e3b", border: "#065f46", label: "Retirement", icon: "🏦" },
+  liquid:     { color: "#06b6d4", bg: "#083344", border: "#155e75", label: "Liquid",     icon: "💧" },
+  other:      { color: "#6b7280", bg: "#111827", border: "#374151", label: "Other",      icon: "📦" },
+} as const;
 
 // ── Action color config ────────────────────────────────────────────────────
 export const ACTION_CONFIG = {

@@ -15,6 +15,7 @@ export function NetWorthCard({
   manualDebtsTotal = 0,
 }: NetWorthCardProps) {
   const { total_value, total_cost_basis, total_gain_loss, total_positions } = snapshot;
+  // snapshot is used directly below for account_categories_json
   const gainLossPct =
     total_cost_basis > 0 ? (total_gain_loss / total_cost_basis) * 100 : 0;
   const isPositive = total_gain_loss >= 0;
@@ -56,10 +57,39 @@ export function NetWorthCard({
           {/* Breakdown — only shown when manual accounts exist */}
           {hasManual && (
             <div className="mt-3 pt-3 border-t border-white/6 space-y-1">
-              <div className="flex justify-between text-xs text-gray-400">
-                <span>Brokerage (Plaid)</span>
-                <span className="font-mono text-white">{formatCurrency(total_value, 0)}</span>
-              </div>
+              {snapshot.account_categories_json ? (
+                <>
+                  {snapshot.account_categories_json.taxable && (
+                    <div className="flex justify-between text-xs text-gray-400">
+                      <span>Taxable (Plaid)</span>
+                      <span className="font-mono text-white">
+                        {formatCurrency(snapshot.account_categories_json.taxable.value, 0)}
+                      </span>
+                    </div>
+                  )}
+                  {snapshot.account_categories_json.retirement && (
+                    <div className="flex justify-between text-xs text-gray-400">
+                      <span>Retirement (Plaid)</span>
+                      <span className="font-mono text-white">
+                        {formatCurrency(snapshot.account_categories_json.retirement.value, 0)}
+                      </span>
+                    </div>
+                  )}
+                  {snapshot.account_categories_json.liquid && (
+                    <div className="flex justify-between text-xs text-gray-400">
+                      <span>Liquid (Plaid)</span>
+                      <span className="font-mono text-white">
+                        {formatCurrency(snapshot.account_categories_json.liquid.value, 0)}
+                      </span>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="flex justify-between text-xs text-gray-400">
+                  <span>Brokerage (Plaid)</span>
+                  <span className="font-mono text-white">{formatCurrency(total_value, 0)}</span>
+                </div>
+              )}
               {manualAssetsTotal > 0 && (
                 <div className="flex justify-between text-xs text-gray-400">
                   <span>Other Assets</span>

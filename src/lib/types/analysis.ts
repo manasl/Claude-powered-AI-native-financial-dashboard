@@ -22,6 +22,21 @@ export interface Recommendation {
   position_note: string;
 }
 
+export interface RetirementHoldingSummary {
+  ticker: string;
+  brokerage: string;
+  account_subtype: string;
+  value: number;
+  growth_note: string;
+}
+
+export interface RetirementSummary {
+  total_value: number;
+  total_positions: number;
+  assessment: string;
+  holdings: RetirementHoldingSummary[];
+}
+
 export interface WatchlistItem {
   ticker: string;
   reason: string;
@@ -46,6 +61,7 @@ export interface AnalysisReport {
   top_concern: string;
   action_items: string[];
   watchlist: WatchlistItem[];
+  retirement_summary?: RetirementSummary;
   created_at?: string;
   // Joined from pipeline_runs
   run?: {

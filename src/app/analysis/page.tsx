@@ -6,8 +6,8 @@ import {
 import { getLatestSnapshot } from "@/lib/queries/portfolio";
 import { ActionBadge, BrokerageBadge, ConfidenceBadge, HealthBadge } from "@/components/ui/badge";
 import { Card, CardTitle } from "@/components/ui/card";
-import { formatDate } from "@/lib/utils";
-import type { Recommendation } from "@/lib/types/analysis";
+import { formatDate, formatCurrency } from "@/lib/utils";
+import type { Recommendation, RetirementSummary } from "@/lib/types/analysis";
 
 export const dynamic = "force-dynamic";
 
@@ -128,6 +128,11 @@ export default async function AnalysisPage() {
           <RecommendationGroup label="Hold" recs={holds} />
         )}
 
+        {/* ── Retirement Summary ───────────────────────────────────────────── */}
+        {analysis.retirement_summary && (
+          <RetirementSummarySection summary={analysis.retirement_summary} />
+        )}
+
         {/* ── Watchlist ────────────────────────────────────────────────────── */}
         {watchlist.length > 0 && (
           <div>
@@ -157,6 +162,57 @@ export default async function AnalysisPage() {
 }
 
 /* ── Sub-components ───────────────────────────────────────────────────────── */
+
+function RetirementSummarySection({ summary }: { summary: RetirementSummary }) {
+  return (
+    <div>
+      <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-3">
+        Retirement Accounts ({summary.total_positions} positions · {formatCurrency(summary.total_value, 0)})
+      </h2>
+      <Card>
+        <div className="flex flex-col gap-4">
+          {/* Overall assessment */}
+          <div className="flex items-start gap-3 pb-4 border-b border-white/5">
+            <span className="text-lg shrink-0">🏦</span>
+            <p className="text-sm text-gray-300 leading-relaxed">{summary.assessment}</p>
+          </div>
+          {/* Holdings list */}
+          <div className="space-y-2">
+            {summary.holdings.map((h, i) => (
+              <div
+                key={i}
+                className="flex items-start justify-between gap-3 rounded-lg bg-white/3 px-3 py-2.5"
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="font-mono font-bold text-white shrink-0">{h.ticker}</span>
+                  <span
+                    className="text-[10px] px-1.5 py-0.5 rounded border font-semibold uppercase tracking-wide shrink-0"
+                    style={{
+                      color: "#10b981",
+                      borderColor: "#065f46",
+                      background: "#064e3b",
+                    }}
+                  >
+                    {h.account_subtype}
+                  </span>
+                  <BrokerageBadge brokerage={h.brokerage} />
+                </div>
+                <div className="text-right shrink-0">
+                  <div className="font-mono text-sm text-white font-semibold">
+                    {formatCurrency(h.value, 0)}
+                  </div>
+                  <div className="text-xs text-gray-400 mt-0.5 max-w-[220px] text-right">
+                    {h.growth_note}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </Card>
+    </div>
+  );
+}
 
 function SignalCount({
   label,

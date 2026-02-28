@@ -1,7 +1,8 @@
 // ── Portfolio types — mirrors the Python pipeline JSON schemas ─────────────
 
-export type Brokerage = "Stash" | "Robinhood" | "Sofi" | "Acorns";
+export type Brokerage = "Stash" | "Robinhood" | "Sofi" | "Acorns" | "Wealthfront";
 export type AssetType = "etf" | "equity" | "cash";
+export type AccountType = "taxable" | "retirement" | "liquid" | "other";
 
 export interface BrokerageSummary {
   value: number;
@@ -11,6 +12,12 @@ export interface BrokerageSummary {
 export interface AssetTypeSummary {
   value: number;
   pct: number;
+}
+
+export interface AccountCategorySummary {
+  value: number;
+  pct: number;
+  positions: number;
 }
 
 export interface PortfolioSummary {
@@ -36,6 +43,8 @@ export interface Holding {
   gain_loss: number | null;
   gain_loss_pct: number | null;
   currency?: string;
+  account_type?: AccountType;
+  account_subtype?: string;
 }
 
 export interface Technicals {
@@ -120,6 +129,7 @@ export interface PortfolioSnapshot {
   total_positions: number;
   brokerages_json: Record<Brokerage, BrokerageSummary>;
   asset_types_json: Record<AssetType, AssetTypeSummary>;
+  account_categories_json?: Partial<Record<AccountType, AccountCategorySummary>>;
   created_at: string;
 }
 
