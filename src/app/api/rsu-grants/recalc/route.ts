@@ -49,7 +49,7 @@ export async function POST() {
   if (!grants?.length) return NextResponse.json({ updated: 0 });
 
   // Fetch prices for each unique ticker (typically just SNOW)
-  const tickers = [...new Set(grants.map((g) => g.ticker as string))];
+  const tickers = Array.from(new Set(grants.map((g) => g.ticker as string)));
   const prices: Record<string, number | null> = {};
   await Promise.all(tickers.map(async (t) => { prices[t] = await fetchPrice(t); }));
 
