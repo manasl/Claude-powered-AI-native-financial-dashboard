@@ -289,6 +289,12 @@ Pricing (claude-sonnet-4-6): $3.00 / 1M input · $15.00 / 1M output
 
 ---
 
+## Disclaimer
+
+This tool is for personal informational use only. I am not a financial analyst, and neither is Claude. Nothing this system produces constitutes financial advice. All analysis, recommendations, and projections should be treated as a starting point for your own research — not as instructions to buy, sell, or hold any security. Always consult a qualified financial professional before making investment decisions.
+
+---
+
 ## Security
 
 - `agent/.env`, `access_tokens.json`, and `access_tokens.enc` are all gitignored — never committed
