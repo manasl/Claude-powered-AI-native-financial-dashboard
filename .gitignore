@@ -39,3 +39,9 @@ next-env.d.ts
 
 # supabase local dev
 supabase/.temp/
+
+# Claude Code session data
+.claude/
+
+# UX previews / scratch files
+ux-preview.html
