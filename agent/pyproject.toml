@@ -6,7 +6,6 @@ build-backend = "hatchling.build"
 name = "financial-analyst-agent"
 version = "0.2.0"
 description = "Autonomous financial analyst — monitors a multi-brokerage portfolio via Plaid and delivers Claude-powered buy/sell/hold recommendations"
-readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.12"
 
