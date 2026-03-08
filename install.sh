@@ -50,21 +50,36 @@ python_upgrade_hint() {
     exit 1
 }
 
-# Resolve python binary — prefer python3.12 explicitly if python3 is older
+# Resolve python binary — find 3.12+ without requiring it to be the default
 PYTHON_BIN=""
-if command -v python3.12 &>/dev/null; then
-    PYTHON_BIN="python3.12"
-elif command -v python3 &>/dev/null; then
-    PY_VER=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
-    PY_MAJOR=$(echo "$PY_VER" | cut -d. -f1)
-    PY_MINOR=$(echo "$PY_VER" | cut -d. -f2)
-    if [[ "$PY_MAJOR" -ge 3 && "$PY_MINOR" -ge 12 ]]; then
-        PYTHON_BIN="python3"
-    else
-        python_upgrade_hint "$PY_VER"
+# Search order: named binary, then common install locations
+PYTHON_CANDIDATES=(
+    "python3.12"
+    "python3.13"
+    "/usr/local/bin/python3.12"
+    "/usr/local/bin/python3.13"
+    "/opt/homebrew/bin/python3.12"
+    "/opt/homebrew/bin/python3.13"
+    "/Library/Frameworks/Python.framework/Versions/3.12/bin/python3.12"
+    "/Library/Frameworks/Python.framework/Versions/3.13/bin/python3.13"
+    "python3"
+    "python"
+)
+for candidate in "${PYTHON_CANDIDATES[@]}"; do
+    if command -v "$candidate" &>/dev/null 2>&1 || [[ -x "$candidate" ]]; then
+        ver=$("$candidate" -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>/dev/null || true)
+        major=$(echo "$ver" | cut -d. -f1)
+        minor=$(echo "$ver" | cut -d. -f2)
+        if [[ "$major" -ge 3 && "$minor" -ge 12 ]] 2>/dev/null; then
+            PYTHON_BIN="$candidate"
+            break
+        fi
     fi
-else
-    python_upgrade_hint "none found"
+done
+
+if [[ -z "$PYTHON_BIN" ]]; then
+    found=$(python3 --version 2>/dev/null | awk '{print $2}' || echo "none found")
+    python_upgrade_hint "$found"
 fi
 PY_VER=$($PYTHON_BIN -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
 info "Python $PY_VER ✓  ($PYTHON_BIN)"
