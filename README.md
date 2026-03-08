@@ -259,6 +259,47 @@ fin-analyst-dashboard/            # Frontend (Next.js)
 
 ---
 
+## API Cost Estimate (3 runs/week)
+
+Costs are based on **actual token usage** measured across 15 real pipeline runs.
+
+### Claude API (claude-sonnet-4-6)
+
+Each pipeline run sends your full enriched portfolio (holdings + technicals + fundamentals + news) to Claude for analysis.
+
+| Metric | Actual average |
+|---|---|
+| Input tokens per run | ~46,600 |
+| Output tokens per run | ~14,800 |
+| Total tokens per run | ~61,400 |
+
+**Pricing** (claude-sonnet-4-6 as of 2025): $3.00 / 1M input tokens · $15.00 / 1M output tokens
+
+| Period | Runs | Claude cost |
+|---|---|---|
+| Per run | 1 | **~$0.36** |
+| Per week | 3 | **~$1.09** |
+| Per month | ~13 | **~$4.70** |
+| Per year | 156 | **~$56** |
+
+### All other services
+
+| Service | Cost |
+|---|---|
+| Plaid (Development, up to 100 connections) | Free |
+| Supabase (free tier — 500 MB DB, 2 GB bandwidth) | Free |
+| Yahoo Finance (live RSU price refresh) | Free |
+| SendGrid (up to 100 emails/day on free tier) | Free |
+| Vercel (dashboard hosting, hobby tier) | Free |
+
+### Total
+
+Running this system 3x/week costs approximately **$4–5/month**, driven entirely by the Claude API. All other services stay within free tiers for personal use.
+
+> Token counts will grow if your portfolio grows (more positions = larger enrichment payload). A portfolio with significantly more tickers than average will cost proportionally more.
+
+---
+
 ## Data Notes
 
 - **Plaid Development** is free for up to 100 connections — more than enough for personal use
