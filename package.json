@@ -33,7 +33,9 @@
     "@radix-ui/react-avatar": "^1.1.0",
     "@radix-ui/react-scroll-area": "^1.1.0",
     "@radix-ui/react-label": "^2.1.0",
-    "zod": "^3.23.8"
+    "zod": "^3.23.8",
+    "otpauth": "^9.3.6",
+    "jose": "^5.9.6"
   },
   "devDependencies": {
     "typescript": "^5.6.3",

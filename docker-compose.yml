@@ -1,0 +1,112 @@
+# Self-hosted Supabase — local Docker Compose stack
+# No GoTrue auth — TOTP auth is handled by the Next.js app
+#
+# First-time setup:
+#   1. Run: bash scripts/generate-keys.sh   → creates .env.docker
+#   2. Run: docker compose up -d
+#   3. Run: bash scripts/init-db.sh         → applies DB migrations
+#
+# Ports on localhost:
+#   8000 → Kong API gateway  (SUPABASE_URL / NEXT_PUBLIC_SUPABASE_URL)
+#   5432 → Postgres          (direct DB access for migrations)
+#   3010 → Supabase Studio   (admin UI — http://localhost:3010)
+
+version: "3.8"
+
+services:
+
+  # ── Postgres ───────────────────────────────────────────────────────────────
+  # Uses the official Supabase postgres image which pre-creates the required
+  # roles: anon, authenticated, service_role, authenticator
+  db:
+    image: supabase/postgres:15.8.1.043
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    env_file:
+      - .env.docker
+    environment:
+      POSTGRES_DB: postgres
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # ── PostgREST — REST API layer ─────────────────────────────────────────────
+  # Validates JWTs using JWT_SECRET and enforces RLS roles
+  rest:
+    image: postgrest/postgrest:v12.2.0
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - .env.docker
+    environment:
+      PGRST_DB_SCHEMAS: public
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_DB_USE_LEGACY_GUCS: "false"
+      # PGRST_DB_URI and PGRST_JWT_SECRET come from .env.docker
+
+  # ── Postgres Meta — DB introspection API for Studio ────────────────────────
+  meta:
+    image: supabase/postgres-meta:v0.84.0
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - .env.docker
+    environment:
+      PG_META_PORT: 8080
+      PG_META_DB_HOST: db
+      PG_META_DB_PORT: 5432
+      PG_META_DB_NAME: postgres
+      PG_META_DB_USER: supabase_admin
+      # PG_META_DB_PASSWORD comes from .env.docker as POSTGRES_PASSWORD
+
+  # ── Kong API Gateway — routes /rest/v1/* to PostgREST ─────────────────────
+  kong:
+    image: kong:2.8.1
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    depends_on:
+      - rest
+    env_file:
+      - .env.docker
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /home/kong/kong.yml
+      KONG_DNS_ORDER: LAST,A,CNAME
+      KONG_PLUGINS: request-transformer,cors,key-auth,acl
+      KONG_NGINX_PROXY_PROXY_BUFFER_SIZE: 160k
+      KONG_NGINX_PROXY_PROXY_BUFFERS: "64 160k"
+    volumes:
+      - ./supabase/kong.yml:/home/kong/kong.yml:ro
+
+  # ── Supabase Studio — Admin UI ─────────────────────────────────────────────
+  studio:
+    image: supabase/studio:20241202-71e5240
+    restart: unless-stopped
+    ports:
+      - "3010:3000"
+    depends_on:
+      - kong
+      - meta
+    env_file:
+      - .env.docker
+    environment:
+      STUDIO_PG_META_URL: http://meta:8080
+      SUPABASE_URL: http://kong:8000
+      SUPABASE_PUBLIC_URL: http://localhost:8000
+      DEFAULT_ORGANIZATION_NAME: "Financial Dashboard"
+      DEFAULT_PROJECT_NAME: "fidelity-dashboard"
+      NEXT_PUBLIC_ENABLE_LOGS: "false"
+      NEXT_ANALYTICS_BACKEND_PROVIDER: ""
+
+volumes:
+  db-data:

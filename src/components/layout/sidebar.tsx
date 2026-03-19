@@ -9,24 +9,31 @@ import {
   Briefcase,
   Target,
   LogOut,
+  ArrowLeftRight,
+  DollarSign,
+  PieChart,
 } from "lucide-react";
-import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 
 const NAV_ITEMS = [
-  { href: "/",           label: "Dashboard",   Icon: LayoutDashboard },
-  { href: "/analysis",   label: "Analysis",    Icon: TrendingUp },
-  { href: "/holdings",   label: "Holdings",    Icon: Briefcase },
-  { href: "/projection", label: "Projection",  Icon: Target },
+  { href: "/",              label: "Dashboard",    Icon: LayoutDashboard },
+  { href: "/analysis",      label: "Analysis",     Icon: TrendingUp },
+  { href: "/holdings",      label: "Holdings",     Icon: Briefcase },
+  { href: "/transactions",  label: "Transactions", Icon: ArrowLeftRight },
+  { href: "/gains",         label: "Gains",        Icon: DollarSign },
+  { href: "/breakdown",     label: "Breakdown",    Icon: PieChart },
+  { href: "/projection",    label: "Projection",   Icon: Target },
 ];
+
+// Desktop shows all 7; mobile shows the first 5 + a compact layout
+const MOBILE_NAV_ITEMS = NAV_ITEMS.slice(0, 5);
 
 export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
 
   const handleSignOut = async () => {
-    const supabase = createClient();
-    await supabase.auth.signOut();
+    await fetch("/api/auth/logout", { method: "POST" });
     router.push("/login");
   };
 
@@ -45,7 +52,7 @@ export function Sidebar() {
         </div>
 
         {/* Nav */}
-        <nav className="flex-1 px-3 py-4 space-y-1">
+        <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
           {NAV_ITEMS.map(({ href, label, Icon }) => {
             const active = href === "/" ? pathname === "/" : pathname.startsWith(href);
             return (
@@ -78,9 +85,9 @@ export function Sidebar() {
         </div>
       </aside>
 
-      {/* ── Mobile bottom nav ─────────────────────────────────────────── */}
+      {/* ── Mobile bottom nav (first 5 items) ─────────────────────────── */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-[#16213e] border-t border-[#2d3748] z-40 flex">
-        {NAV_ITEMS.map(({ href, label, Icon }) => {
+        {MOBILE_NAV_ITEMS.map(({ href, label, Icon }) => {
           const active = href === "/" ? pathname === "/" : pathname.startsWith(href);
           return (
             <Link

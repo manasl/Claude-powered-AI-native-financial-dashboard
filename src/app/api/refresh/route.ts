@@ -2,11 +2,11 @@ import { createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-// POST /api/refresh — queue a pipeline refresh
+export const dynamic = "force-dynamic";
+
+// POST /api/refresh — queue a pipeline refresh (auth via TOTP session cookie, checked by middleware)
 export async function POST() {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   // Rate limit: check if last pipeline run was within 30 minutes
   const { data: lastRun } = await supabase
@@ -54,8 +54,6 @@ export async function POST() {
 // GET /api/refresh?id=<uuid> — poll request status
 export async function GET(request: NextRequest) {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const id = request.nextUrl.searchParams.get("id");
   if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 });

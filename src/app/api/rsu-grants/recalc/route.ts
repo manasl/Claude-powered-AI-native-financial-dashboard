@@ -2,6 +2,8 @@ import { createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 import type { RsuVestingEvent } from "@/lib/queries/rsu";
 
+export const dynamic = "force-dynamic";
+
 /** Fetch current price for a ticker via Yahoo Finance (no API key required). */
 async function fetchPrice(ticker: string): Promise<number | null> {
   try {

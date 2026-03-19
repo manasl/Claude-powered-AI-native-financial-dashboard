@@ -1,28 +1,12 @@
-import { createServerClient } from "@supabase/ssr";
-import type { CookieOptions } from "@supabase/ssr";
-import { cookies } from "next/headers";
+import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 
+// Server-side Supabase client using the service role key.
+// Bypasses Row Level Security — appropriate for a single-user self-hosted app
+// where authentication is handled separately via TOTP + session cookie.
 export async function createClient() {
-  const cookieStore = await cookies();
-
-  return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return cookieStore.getAll();
-        },
-        setAll(cookiesToSet: { name: string; value: string; options: CookieOptions }[]) {
-          try {
-            cookiesToSet.forEach(({ name, value, options }) =>
-              cookieStore.set(name, value, options)
-            );
-          } catch {
-            // setAll called from a Server Component — safe to ignore
-          }
-        },
-      },
-    }
-  );
+  // Fallbacks prevent build-time errors when env vars aren't present;
+  // actual DB calls only happen at runtime where .env.local is loaded.
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "http://localhost:8000";
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "build-placeholder";
+  return createSupabaseClient(url, key);
 }
