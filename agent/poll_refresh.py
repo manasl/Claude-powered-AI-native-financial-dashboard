@@ -60,7 +60,7 @@ def get_pending_request(supabase):
     """Return the oldest pending refresh request, or None."""
     result = (
         supabase.table("refresh_requests")
-        .select("id, requested_at")
+        .select("id, requested_at, request_type")
         .eq("status", "pending")
         .order("requested_at")
         .limit(1)
@@ -102,27 +102,32 @@ def minutes_since_last_run(supabase) -> float:
 
 # ── Pipeline execution ────────────────────────────────────────────────────────
 
-def run_pipeline() -> tuple[bool, str | None]:
-    """Run the pipeline. Returns (success, error_message)."""
+def run_pipeline(mode: str = "full") -> tuple[bool, str | None]:
+    """Run the pipeline in the given mode. Returns (success, error_message).
+
+    mode: 'sync'    → notebooks 02, 02b, 03 (Plaid + enrichment)
+          'analyze' → notebooks 04, 05     (Claude + notifications)
+          'full'    → all notebooks
+    """
     pipeline_script = PROJECT_DIR / "run_pipeline.py"
-    log.info("Starting pipeline…")
+    log.info(f"Starting pipeline (mode={mode})…")
     try:
         result = subprocess.run(
-            [sys.executable, str(pipeline_script)],
+            [sys.executable, str(pipeline_script), "--mode", mode],
             cwd=str(PROJECT_DIR),
             timeout=1800,  # 30 min max
             capture_output=True,
             text=True,
         )
         if result.returncode == 0:
-            log.info("Pipeline completed successfully")
+            log.info(f"Pipeline ({mode}) completed successfully")
             return True, None
         else:
             err = result.stderr[-500:] if result.stderr else "Unknown error"
-            log.error(f"Pipeline failed: {err}")
+            log.error(f"Pipeline ({mode}) failed: {err}")
             return False, err
     except subprocess.TimeoutExpired:
-        log.error("Pipeline timed out after 30 minutes")
+        log.error(f"Pipeline ({mode}) timed out after 30 minutes")
         return False, "Pipeline timed out"
     except Exception as e:
         log.error(f"Pipeline execution error: {e}")
@@ -137,32 +142,41 @@ def poll_once(supabase):
     if not req:
         return  # nothing to do
 
-    log.info(f"Found pending refresh request: {req['id']} (requested at {req['requested_at']})")
+    request_type = req.get("request_type", "sync")
+    log.info(
+        f"Found pending refresh request: {req['id']} "
+        f"type={request_type} (requested at {req['requested_at']})"
+    )
 
-    # Rate limit check
+    # Rate limit check:
+    #   sync    → 30 min (hits Plaid API)
+    #   enrich  →  5 min (hits yfinance, cheap but no point hammering)
+    #   analyze →  5 min (hits Claude API)
     mins = minutes_since_last_run(supabase)
-    if mins < MIN_RUN_INTERVAL / 60:
-        log.info(f"Rate limit: last run was {mins:.1f} min ago (min {MIN_RUN_INTERVAL/60:.0f} min). Waiting.")
-        # Don't mark failed — let the user wait for the cooldown
-        # Update to failed with a friendly message
+    min_interval = MIN_RUN_INTERVAL / 60  # default 30 min
+    if request_type in ("analyze", "enrich"):
+        min_interval = 5
+
+    if mins < min_interval:
+        log.info(f"Rate limit: last run was {mins:.1f} min ago (min {min_interval:.0f} min). Waiting.")
         mark_completed(
             supabase,
             req["id"],
-            error=f"Rate limited: last run was {mins:.0f}m ago. Wait {MIN_RUN_INTERVAL/60:.0f}m between refreshes.",
+            error=f"Rate limited: last run was {mins:.0f}m ago. Wait {min_interval:.0f}m between refreshes.",
         )
         return
 
     # Mark as running
     mark_running(supabase, req["id"])
-    log.info("Marked request as running, launching pipeline…")
+    log.info(f"Marked request as running, launching pipeline (mode={request_type})…")
 
-    # Run pipeline (includes sync_to_supabase.py)
-    success, error = run_pipeline()
+    # Run pipeline with the requested mode
+    success, error = run_pipeline(mode=request_type)
 
     # Mark complete
     mark_completed(supabase, req["id"], error=error)
     status = "completed" if success else "failed"
-    log.info(f"Refresh request {req['id']} → {status}")
+    log.info(f"Refresh request {req['id']} ({request_type}) → {status}")
 
 
 def main(once: bool = False):

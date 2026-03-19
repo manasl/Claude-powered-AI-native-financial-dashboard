@@ -233,12 +233,15 @@ def main():
         asset_types_json = compute_asset_type_summary(holdings_rows, total_value)
         account_categories_json = compute_account_category_summary(holdings_rows, total_value)
 
+        snapshot_date = now_iso[:10]  # YYYY-MM-DD
+
         snap_res = (
             supabase.table("portfolio_snapshots")
             .insert(
                 clean(
                     {
-                        "pipeline_run_id": pipeline_run_id,
+                        "run_id": pipeline_run_id,
+                        "snapshot_date": snapshot_date,
                         "total_value": round(total_value, 2),
                         "total_cost_basis": round(total_cost_basis, 2),
                         "total_gain_loss": round(total_gain_loss, 2),
