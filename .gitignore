@@ -40,6 +40,10 @@ next-env.d.ts
 # supabase local dev
 supabase/.temp/
 
+# Docker Compose secrets & persistent data
+.env.docker
+docker-data/
+
 # Claude Code session data
 .claude/
 
@@ -54,6 +58,10 @@ agent/.token_salt
 agent/portfolio_snapshot.json
 agent/portfolio_history.json
 agent/enriched_portfolio.json
+agent/transactions.json
+agent/realized_gains.json
+agent/raw_plaid_responses/
+agent/raw_holdings_responses.json
 agent/reports/
 agent/logs/
 agent/__pycache__/
