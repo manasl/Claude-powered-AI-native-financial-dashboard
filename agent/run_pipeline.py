@@ -52,6 +52,7 @@ def main():
     notebooks = [
         # Skip 01 — tokens are already saved and persistent
         "02_fetch_holdings.ipynb",
+        "02b_fetch_transactions.ipynb",  # 2-year transaction history from Plaid
         "03_data_enrichment.ipynb",
         "04_claude_analysis.ipynb",
         "05_notifications.ipynb",

@@ -347,6 +347,69 @@ def main(trigger: str = "scheduled", force: bool = False):
     else:
         print("   ⚠️  SNOW enrichment data not found — RSU price not updated")
 
+    # ── 9. Upsert transactions (dedup on plaid_transaction_id) ────────────────
+    TRANSACTIONS_FILE = PROJECT_DIR / "transactions.json"
+    if TRANSACTIONS_FILE.exists():
+        transactions_raw = clean(load_json(TRANSACTIONS_FILE))
+        print(f"📝 Upserting {len(transactions_raw)} transactions…")
+        txn_rows = []
+        for txn in transactions_raw:
+            txn_rows.append({
+                "snapshot_id": snapshot_id,
+                "plaid_transaction_id": txn["plaid_transaction_id"],
+                "account_id": txn.get("account_id"),
+                "brokerage": txn.get("brokerage"),
+                "ticker": txn.get("ticker"),
+                "name": txn.get("name"),
+                "date": txn.get("date"),
+                "type": txn.get("type", "other"),
+                "subtype": txn.get("subtype"),
+                "quantity": txn.get("quantity"),
+                "price": txn.get("price"),
+                "amount": txn.get("amount"),
+                "fees": txn.get("fees"),
+                "currency": txn.get("currency", "USD"),
+                "raw_json": txn.get("raw_json"),
+            })
+        for i in range(0, len(txn_rows), 100):
+            chunk = txn_rows[i : i + 100]
+            supabase.table("transactions").upsert(
+                chunk, on_conflict="plaid_transaction_id"
+            ).execute()
+        print(f"   ✅ transactions: {len(txn_rows)} rows upserted")
+    else:
+        print("   ℹ️  transactions.json not found — skipping (run 02b notebook first)")
+
+    # ── 10. Insert raw Plaid responses ─────────────────────────────────────────
+    RAW_PLAID_DIR = PROJECT_DIR / "raw_plaid_responses"
+    if RAW_PLAID_DIR.exists():
+        raw_files = sorted(RAW_PLAID_DIR.glob("*.json"))
+        if raw_files:
+            print(f"📝 Inserting {len(raw_files)} raw Plaid response(s)…")
+            raw_rows = []
+            for rf in raw_files:
+                try:
+                    resp_data = clean(load_json(rf))
+                    brokerage = resp_data.get("brokerage") or rf.stem.split("_")[1]
+                    endpoint = resp_data.get("endpoint", "investments/transactions/get")
+                    fetched_at = resp_data.get("fetched_at") or generated_at
+                    raw_rows.append({
+                        "endpoint": endpoint,
+                        "brokerage": brokerage,
+                        "response_json": resp_data,
+                        "fetched_at": fetched_at,
+                    })
+                except Exception as e:
+                    print(f"   ⚠️  Could not read {rf.name}: {e}")
+            for i in range(0, len(raw_rows), 50):
+                chunk = raw_rows[i : i + 50]
+                supabase.table("raw_plaid_responses").insert(chunk).execute()
+            print(f"   ✅ raw_plaid_responses: {len(raw_rows)} rows inserted")
+        else:
+            print("   ℹ️  raw_plaid_responses/ is empty — skipping")
+    else:
+        print("   ℹ️  raw_plaid_responses/ not found — skipping (run 02b notebook first)")
+
     # ── Done ──────────────────────────────────────────────────────────────────
     print(f"\n🎉 Sync complete! run_id={run_id}")
     print(f"   Snapshot: {snapshot_date} | ${summary['total_value']:,.0f} | {summary['total_positions']} positions")
