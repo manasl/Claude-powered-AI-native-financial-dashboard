@@ -1,0 +1,10 @@
+
+
+Run Date,Action,Symbol,Description,Type,Exchange,Quantity,Price,Commission,Fees,Accrued Interest,Amount,Settlement Date
+03/01/2024,YOU BOUGHT,FAER,Fake REIT,Buy,NASDAQ,5,$196.80,,,$0.00,($984.00),03/05/2024
+03/03/2024,YOU SOLD,FAER,Fake REIT,Sell,NASDAQ,5,$197.47,,$0.65,$0.00,+$986.70,03/07/2024
+01/15/2024,YOU BOUGHT,FAKX,Fake Corp X,Buy,NYSE,50,$36.00,$4.99,$0.49,$0.00,($1,824.98),01/17/2024
+02/14/2024,DIVIDEND RECEIVED,FAKX,Fake Corp X,Dividend,,,,,$0.00,+$24.56,02/14/2024
+02/14/2024,REINVESTMENT,FAKX,Fake Corp X,Reinvestment,NYSE,0.532,$46.16,,$0.00,$0.00,($24.56),02/16/2024
+01/10/2024,OPENING TRANSACTION, -JD270115C25,Fake Option Call,Options,CBOE,10,$2.00,,$1.30,$0.00,($2,001.30),01/12/2024
+This statement is provided for information purposes only and should not be considered a tax document.

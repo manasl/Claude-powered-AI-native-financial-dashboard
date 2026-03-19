@@ -18,6 +18,47 @@ A self-hosted personal finance system that connects to your real brokerage accou
 
 ---
 
+## Data Sources
+
+### CSV Import (Available Now — No Plaid Required)
+
+Export two files directly from your Fidelity account while waiting for Plaid Development access:
+
+**Holdings (Portfolio Positions):**
+1. Log in to Fidelity → Accounts & Trade → Portfolio
+2. Click **Download** (top-right) → select **All Accounts**
+3. Save as `agent/csv_import/holdings.csv`
+
+**Transactions (Activity Orders History):**
+1. Log in → Accounts & Trade → Activity & Orders
+2. Set date range (up to 2 years) → **Download** → Activity
+3. Save as `agent/csv_import/transactions.csv`
+
+**Import:**
+```bash
+cd agent
+uv run python csv_import/csv_to_supabase.py \
+  --holdings  csv_import/holdings.csv \
+  --transactions csv_import/transactions.csv
+```
+
+A pre-flight summary is printed first; type `CONFIRM` to proceed. Realized gains are computed automatically via FIFO from the transaction history.
+
+**Remove CSV data when Plaid goes live:**
+```bash
+bash scripts/purge_csv_data.sh
+```
+
+### Plaid Live Connection (Pending Approval)
+
+Plaid Development access typically takes 1–3 business days after applying. Once approved:
+1. Add credentials to `agent/.env`
+2. Run `uv run python connect_real_account.py` to connect Fidelity via OAuth
+3. Run `bash scripts/purge_csv_data.sh` to remove CSV-imported data
+4. The scheduled pipeline (Mon/Wed/Fri 7am) then keeps data live
+
+---
+
 ## Architecture
 
 ```

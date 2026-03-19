@@ -75,8 +75,9 @@ export const TRANSACTION_TYPE_CONFIG: Record<
   sell:     { bg: "#450a0a", text: "#ef4444", border: "#7f1d1d", label: "Sell" },
   dividend: { bg: "#1e3a5f", text: "#60a5fa", border: "#1e40af", label: "Dividend" },
   transfer: { bg: "#2d1b69", text: "#a78bfa", border: "#4c1d95", label: "Transfer" },
-  fee:      { bg: "#292524", text: "#9ca3af", border: "#44403c", label: "Fee" },
-  other:    { bg: "#1c1917", text: "#6b7280", border: "#292524", label: "Other" },
+  fee:          { bg: "#292524", text: "#9ca3af", border: "#44403c", label: "Fee" },
+  reinvestment: { bg: "#083344", text: "#67e8f9", border: "#155e75", label: "Reinvestment" },
+  other:        { bg: "#1c1917", text: "#6b7280", border: "#292524", label: "Other" },
 } as const;
 
 // ── Nav items ─────────────────────────────────────────────────────────────
