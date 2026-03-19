@@ -1,24 +1,13 @@
 _format_version: "1.1"
-_transform: true
 
 # Kong declarative configuration for self-hosted Supabase
 # Routes /rest/v1/* → PostgREST
-# JWT validation is done by PostgREST itself (PGRST_JWT_SECRET)
-# Kong adds CORS and key-auth so only valid apikeys reach PostgREST
-
-consumers:
-  - username: anon
-    keyauth_credentials:
-      - key: ${ANON_KEY}
-  - username: service_role
-    keyauth_credentials:
-      - key: ${SERVICE_ROLE_KEY}
-
-acls:
-  - consumer: anon
-    group: anon
-  - consumer: service_role
-    group: admin
+#
+# Auth strategy: JWT-only via PostgREST (PGRST_JWT_SECRET)
+#   - PostgREST validates the Authorization: Bearer <jwt> header directly
+#   - Kong adds CORS and passes requests through
+#   - No key-auth plugin: avoids env-var substitution issues with Kong 2.x
+#     and removes the redundant apikey layer for a single-user local deployment
 
 services:
   - name: rest-v1
@@ -56,15 +45,3 @@ services:
             - X-Kong-Proxy-Latency
           credentials: true
           max_age: 3600
-      - name: key-auth
-        config:
-          hide_credentials: false
-          key_names:
-            - apikey
-            - Authorization
-      - name: acl
-        config:
-          hide_groups_header: true
-          allow:
-            - anon
-            - admin

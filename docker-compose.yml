@@ -11,8 +11,6 @@
 #   5432 → Postgres          (direct DB access for migrations)
 #   3010 → Supabase Studio   (admin UI — http://localhost:3010)
 
-version: "3.8"
-
 services:
 
   # ── Postgres ───────────────────────────────────────────────────────────────
@@ -82,7 +80,7 @@ services:
       KONG_DATABASE: "off"
       KONG_DECLARATIVE_CONFIG: /home/kong/kong.yml
       KONG_DNS_ORDER: LAST,A,CNAME
-      KONG_PLUGINS: request-transformer,cors,key-auth,acl
+      KONG_PLUGINS: request-transformer,cors
       KONG_NGINX_PROXY_PROXY_BUFFER_SIZE: 160k
       KONG_NGINX_PROXY_PROXY_BUFFERS: "64 160k"
     volumes:

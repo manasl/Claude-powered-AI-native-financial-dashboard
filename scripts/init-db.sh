@@ -2,6 +2,9 @@
 # Apply database migrations to the local self-hosted Supabase Postgres.
 # Run once after `docker compose up -d` (and again when migrations change).
 #
+# Runs psql inside the Docker container via docker compose exec —
+# no local psql install needed.
+#
 # Usage: bash scripts/init-db.sh
 
 set -euo pipefail
@@ -9,6 +12,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 MIGRATIONS_DIR="$ROOT_DIR/supabase/migrations"
+COMPOSE_FILE="$ROOT_DIR/docker-compose.yml"
 
 # Load POSTGRES_PASSWORD from .env.docker
 if [[ ! -f "$ROOT_DIR/.env.docker" ]]; then
@@ -18,20 +22,15 @@ fi
 # shellcheck disable=SC2046
 export $(grep -v '^#' "$ROOT_DIR/.env.docker" | grep 'POSTGRES_PASSWORD' | xargs)
 
-PGHOST="${PGHOST:-localhost}"
-PGPORT="${PGPORT:-5432}"
-PGUSER="${PGUSER:-postgres}"
-PGDATABASE="${PGDATABASE:-postgres}"
-
 echo ""
 echo "📦  Running database migrations..."
-echo "    Host: ${PGHOST}:${PGPORT}  DB: ${PGDATABASE}"
 echo ""
 
-# Wait for Postgres to be ready
+# Wait for Postgres to be ready (via docker compose exec into the db service)
 max_attempts=30
 attempt=0
-until PGPASSWORD="$POSTGRES_PASSWORD" psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$PGDATABASE" -c '\q' 2>/dev/null; do
+until docker compose -f "$COMPOSE_FILE" exec -e PGPASSWORD="$POSTGRES_PASSWORD" -T db \
+    psql -U supabase_admin -d postgres -c '\q' 2>/dev/null; do
   attempt=$((attempt + 1))
   if [[ $attempt -ge $max_attempts ]]; then
     echo "❌  Postgres did not become ready after ${max_attempts} attempts."
@@ -45,16 +44,13 @@ done
 echo "✅  Postgres is ready."
 echo ""
 
-# Run each migration in order
+# Pipe each migration file into psql inside the db container
 for migration in "$MIGRATIONS_DIR"/*.sql; do
   filename=$(basename "$migration")
   echo "   Applying: ${filename}"
-  PGPASSWORD="$POSTGRES_PASSWORD" psql \
-    -h "$PGHOST" -p "$PGPORT" \
-    -U "$PGUSER" -d "$PGDATABASE" \
-    -f "$migration" \
-    -v ON_ERROR_STOP=1 \
-    --quiet
+  docker compose -f "$COMPOSE_FILE" exec -e PGPASSWORD="$POSTGRES_PASSWORD" -T db \
+    psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1 --quiet \
+    < "$migration"
   echo "   ✓ ${filename}"
 done
 
