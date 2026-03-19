@@ -78,6 +78,7 @@ def create_link_token():
             country_codes=[CountryCode("US")],
             language="en",
             user=LinkTokenCreateRequestUser(client_user_id="user-1"),
+            redirect_uri="http://localhost:5555/oauth-callback",
         )
         response = client.link_token_create(link_request)
         return jsonify({"link_token": response.link_token})

@@ -2,18 +2,19 @@
 Spin up a temporary local server to run Plaid Link.
 Usage: uv run python connect_real_account.py
 Then open http://localhost:5555 in your browser.
+
+Supports OAuth brokerages (e.g. Fidelity) via redirect_uri.
 """
 
 import json
 import os
 from http.server import HTTPServer, SimpleHTTPRequestHandler
-from urllib.parse import parse_qs
+from urllib.parse import urlparse
 
 from dotenv import load_dotenv
 
 load_dotenv()
 
-# We need these for the inline server
 from plaid_config import get_plaid_client, PLAID_ENV
 from plaid.model.link_token_create_request import LinkTokenCreateRequest
 from plaid.model.link_token_create_request_user import LinkTokenCreateRequestUser
@@ -23,6 +24,10 @@ from plaid.model.item_public_token_exchange_request import ItemPublicTokenExchan
 
 client = get_plaid_client()
 TOKENS_FILE = "access_tokens.json"
+
+# OAuth redirect URI — must be registered in Plaid Dashboard
+# Settings → API → Allowed redirect URIs → add http://localhost:5555/oauth-callback
+OAUTH_REDIRECT_URI = "http://localhost:5555/oauth-callback"
 
 
 def load_tokens():
@@ -39,10 +44,17 @@ def save_tokens(tokens):
 
 class Handler(SimpleHTTPRequestHandler):
     def do_GET(self):
-        if self.path == "/" or self.path.startswith("/?"):
+        parsed = urlparse(self.path)
+        path = parsed.path
+
+        if path == "/" or path.startswith("/?"):
             self._serve_page()
-        elif self.path == "/create_link_token":
+        elif path == "/create_link_token":
             self._create_link_token()
+        elif path == "/oauth-callback":
+            # Fidelity OAuth redirect lands here.
+            # The page re-initializes Plaid Link with receivedRedirectUri.
+            self._serve_page(oauth_redirect=True)
         else:
             self.send_error(404)
 
@@ -61,6 +73,7 @@ class Handler(SimpleHTTPRequestHandler):
             country_codes=[CountryCode("US")],
             language="en",
             user=LinkTokenCreateRequestUser(client_user_id="user-1"),
+            redirect_uri=OAUTH_REDIRECT_URI,
         )
         response = client.link_token_create(request)
         self._json_response({"link_token": response.link_token})
@@ -82,9 +95,51 @@ class Handler(SimpleHTTPRequestHandler):
             "item_id": exchange_resp.item_id,
         })
 
-    def _serve_page(self):
+    def _serve_page(self, oauth_redirect=False):
         tokens = load_tokens()
         connected_list = ", ".join(tokens.keys()) if tokens else "None yet"
+
+        # oauth_redirect=True: page opened by Fidelity OAuth redirect.
+        # JS detects oauth_state_id in URL and re-initializes Link automatically.
+        oauth_init_js = """
+        window.addEventListener('load', function() {
+            const params = new URLSearchParams(window.location.search);
+            if (params.has('oauth_state_id')) {
+                const linkToken = sessionStorage.getItem('plaid_link_token');
+                const nickname = sessionStorage.getItem('plaid_nickname');
+                if (!linkToken) {
+                    document.getElementById('status').innerHTML =
+                        '❌ OAuth state lost. Please start over.';
+                    return;
+                }
+                document.getElementById('status').innerHTML =
+                    '🔄 Completing OAuth connection...';
+                const handler = Plaid.create({
+                    token: linkToken,
+                    receivedRedirectUri: window.location.href,
+                    onSuccess: async (public_token, metadata) => {
+                        document.getElementById('status').innerHTML = 'Exchanging token...';
+                        const exResp = await fetch('/exchange', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ public_token, nickname }),
+                        });
+                        const result = await exResp.json();
+                        sessionStorage.removeItem('plaid_link_token');
+                        sessionStorage.removeItem('plaid_nickname');
+                        document.getElementById('status').innerHTML =
+                            '✅ Connected <strong>' + (nickname || 'fidelity') +
+                            '</strong> (item: ' + result.item_id + ')<br>Reload to connect another.';
+                    },
+                    onExit: (err) => {
+                        if (err) document.getElementById('status').innerHTML =
+                            '❌ ' + err.display_message;
+                    },
+                });
+                handler.open();
+            }
+        });
+        """ if oauth_redirect else ""
 
         html = f"""<!DOCTYPE html>
 <html>
@@ -106,11 +161,13 @@ class Handler(SimpleHTTPRequestHandler):
     <p>Environment: <strong>{PLAID_ENV}</strong></p>
     <hr>
     <label>Nickname for this account:</label><br>
-    <input type="text" id="nickname" placeholder="e.g. stash, robinhood, sofi, fidelity" style="width: 300px; margin: 8px 0;">
+    <input type="text" id="nickname" placeholder="e.g. fidelity, robinhood, sofi" style="width: 300px; margin: 8px 0;">
     <br><br>
     <button onclick="startLink()">Connect Account via Plaid</button>
     <div id="status"></div>
     <script>
+        {oauth_init_js}
+
         async function startLink() {{
             const nickname = document.getElementById('nickname').value.trim();
             if (!nickname) {{ alert('Enter a nickname first'); return; }}
@@ -119,6 +176,10 @@ class Handler(SimpleHTTPRequestHandler):
 
             const resp = await fetch('/create_link_token');
             const {{ link_token }} = await resp.json();
+
+            // Store link_token + nickname so they survive the OAuth redirect
+            sessionStorage.setItem('plaid_link_token', link_token);
+            sessionStorage.setItem('plaid_nickname', nickname);
 
             const handler = Plaid.create({{
                 token: link_token,
@@ -130,6 +191,8 @@ class Handler(SimpleHTTPRequestHandler):
                         body: JSON.stringify({{ public_token, nickname }}),
                     }});
                     const result = await exResp.json();
+                    sessionStorage.removeItem('plaid_link_token');
+                    sessionStorage.removeItem('plaid_nickname');
                     document.getElementById('status').innerHTML =
                         '✅ Connected <strong>' + nickname + '</strong> (item: ' + result.item_id + ')<br>Reload to connect another.';
                 }},
@@ -159,7 +222,9 @@ class Handler(SimpleHTTPRequestHandler):
 
 if __name__ == "__main__":
     port = 5555
-    print(f"\\n🔗 Plaid Link Server ({PLAID_ENV} mode)")
+    print(f"\n🔗 Plaid Link Server ({PLAID_ENV} mode)")
     print(f"   Open http://localhost:{port} in your browser")
-    print(f"   Press Ctrl+C to stop\\n")
+    print(f"   OAuth redirect URI: {OAUTH_REDIRECT_URI}")
+    print(f"   ⚠️  Register {OAUTH_REDIRECT_URI} in Plaid Dashboard → Settings → Allowed redirect URIs")
+    print(f"   Press Ctrl+C to stop\n")
     HTTPServer(("", port), Handler).serve_forever()

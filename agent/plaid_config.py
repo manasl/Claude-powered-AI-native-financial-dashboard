@@ -15,6 +15,8 @@ PLAID_SECRET = os.getenv("PLAID_SECRET")
 PLAID_ENV = os.getenv("PLAID_ENV", "production")
 
 PLAID_ENV_URLS = {
+    "sandbox": plaid.Environment.Sandbox,
+    "development": plaid.Environment.Development,
     "production": plaid.Environment.Production,
 }
 
