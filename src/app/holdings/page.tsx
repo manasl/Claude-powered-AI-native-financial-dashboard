@@ -56,6 +56,46 @@ export default async function HoldingsPage({
       <div className="p-4 md:p-6 lg:p-8">
         <div className="max-w-7xl mx-auto space-y-4">
 
+          {/* ── Unrealized G/L banner ────────────────────────────────────── */}
+          {(() => {
+            const withCost = allHoldings.filter((h) => h.gain_loss != null);
+            const totalGL = withCost.reduce((s, h) => s + (h.gain_loss ?? 0), 0);
+            const totalCost = withCost.reduce((s, h) => s + (h.cost_basis ?? 0), 0);
+            const pct = totalCost > 0 ? (totalGL / totalCost) * 100 : null;
+            if (withCost.length === 0) return null;
+            const positive = totalGL >= 0;
+            return (
+              <div
+                className="rounded-xl border px-5 py-4 flex flex-col md:flex-row md:items-center gap-2 md:gap-6"
+                style={{
+                  borderColor: positive ? "#065f46" : "#7f1d1d",
+                  background: positive ? "#052e16" : "#450a0a",
+                }}
+              >
+                <div className="flex-1">
+                  <p className="text-xs text-gray-500 uppercase tracking-wider mb-0.5">
+                    Total Unrealized Gain / Loss
+                  </p>
+                  <p
+                    className="text-2xl font-bold font-mono"
+                    style={{ color: positive ? "#22c55e" : "#ef4444" }}
+                  >
+                    {totalGL >= 0 ? "+" : ""}
+                    {formatCurrency(totalGL, 0)}
+                    {pct != null && (
+                      <span className="text-sm font-normal ml-2 opacity-75">
+                        ({pct >= 0 ? "+" : ""}{pct.toFixed(2)}%)
+                      </span>
+                    )}
+                  </p>
+                </div>
+                <p className="text-xs text-gray-600">
+                  Across {withCost.length} positions with cost basis data
+                </p>
+              </div>
+            );
+          })()}
+
           {/* ── Summary + filter bar ──────────────────────────────────────── */}
           <div className="flex flex-col md:flex-row md:items-center gap-3">
             <div className="flex items-center gap-4 text-sm text-gray-400">

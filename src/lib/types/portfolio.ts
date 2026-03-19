@@ -1,6 +1,6 @@
 // ── Portfolio types — mirrors the Python pipeline JSON schemas ─────────────
 
-export type Brokerage = "Stash" | "Robinhood" | "Sofi" | "Acorns" | "Wealthfront";
+export type Brokerage = "Stash" | "Robinhood" | "Sofi" | "Acorns" | "Wealthfront" | "Fidelity";
 export type AssetType = "etf" | "equity" | "cash";
 export type AccountType = "taxable" | "retirement" | "liquid" | "other";
 

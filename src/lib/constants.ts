@@ -10,9 +10,10 @@ export const BROKERAGE_CONFIG: Record<
   Sofi:       { bg: "#6b21a8", text: "#d8b4fe", border: "#581c87", label: "SoFi" },
   Acorns:     { bg: "#92400e", text: "#fcd34d", border: "#78350f", label: "Acorns" },
   Wealthfront: { bg: "#0f766e", text: "#5eead4", border: "#0d9488", label: "Wealthfront" },
+  Fidelity:    { bg: "#7c2d12", text: "#fca5a5", border: "#991b1b", label: "Fidelity" },
 };
 
-export const BROKERAGES: Brokerage[] = ["Stash", "Robinhood", "Sofi", "Acorns", "Wealthfront"];
+export const BROKERAGES: Brokerage[] = ["Stash", "Robinhood", "Sofi", "Acorns", "Wealthfront", "Fidelity"];
 
 // ── Account category config ────────────────────────────────────────────────
 export const ACCOUNT_CATEGORY_CONFIG = {
@@ -64,6 +65,19 @@ export const PROJECTION_DEFAULTS = {
 
 // ── Milestone targets (net worth) ─────────────────────────────────────────
 export const MILESTONES = [250_000, 500_000, 750_000, 1_000_000, 1_500_000, 2_000_000];
+
+// ── Transaction type badge config ──────────────────────────────────────────
+export const TRANSACTION_TYPE_CONFIG: Record<
+  string,
+  { bg: string; text: string; border: string; label: string }
+> = {
+  buy:      { bg: "#064e3b", text: "#22c55e", border: "#065f46", label: "Buy" },
+  sell:     { bg: "#450a0a", text: "#ef4444", border: "#7f1d1d", label: "Sell" },
+  dividend: { bg: "#1e3a5f", text: "#60a5fa", border: "#1e40af", label: "Dividend" },
+  transfer: { bg: "#2d1b69", text: "#a78bfa", border: "#4c1d95", label: "Transfer" },
+  fee:      { bg: "#292524", text: "#9ca3af", border: "#44403c", label: "Fee" },
+  other:    { bg: "#1c1917", text: "#6b7280", border: "#292524", label: "Other" },
+} as const;
 
 // ── Nav items ─────────────────────────────────────────────────────────────
 export const NAV_ITEMS = [
