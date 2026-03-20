@@ -26,13 +26,16 @@ ACCOUNT_NAME_DEFAULT = "taxable"
 # ── Investment type mapping (exact match, case-insensitive) ──────────────────
 INVESTMENT_TYPE_MAP: dict[str, str] = {
     "stocks": "equity",
+    "etfs": "equity",
+    "mutual funds": "equity",
+    "others": "equity",
     "reit/uit/lps": "reit",
     "options": "option",
     "cash": "cash",
 }
 
 # Pattern: a valid Fidelity account number starts with a letter followed by 6-12 digits
-_ACCOUNT_NUM_RE = re.compile(r"^[A-Z]\d{6,12}$")
+_ACCOUNT_NUM_RE = re.compile(r"^([A-Z]\d{4,12}|\d{4,12})$")
 
 
 def _is_data_row(account_number: str) -> bool:
