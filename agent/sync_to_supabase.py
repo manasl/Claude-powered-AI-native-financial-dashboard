@@ -303,12 +303,21 @@ def main(trigger: str = "scheduled", force: bool = False):
     generated_at = enriched["generated_at"]  # ISO timestamp
     
     if failed_tickers:
-        logger.error(f"❌  {len(failed_tickers)} tickers failed to enrich: {failed_tickers}")
-        for t in failed_tickers:
-            logger.error(f"  ❌ {t}: Check yfinance availability or ticker symbol")
-        error_msg = f"Enrichment failed for {len(failed_tickers)} ticker(s): " + ", ".join(failed_tickers)
-        mark_refresh_complete(supabase, error=error_msg)
-        sys.exit(1)
+        option_failures = [t for t in failed_tickers if t.startswith("-")]
+        equity_failures = [t for t in failed_tickers if not t.startswith("-")]
+        if equity_failures:
+            logger.error(f"⚠️  {len(failed_tickers)} tickers failed to enrich: {failed_tickers}")
+            for t in failed_tickers:
+                logger.error(f"  ❌ {t}: Check yfinance availability or ticker symbol")
+            error_msg = f"Enrichment failed for {len(failed_tickers)} ticker(s): " + ", ".join(failed_tickers)
+            mark_refresh_complete(supabase, error=error_msg)
+            sys.exit(1)
+        else:
+            # Options-only failures: log a warning but continue — options data can be
+            # transiently unavailable on yfinance (esp. ADR options like JD, NVO)
+            logger.warning(f"⚠️  {len(option_failures)} option ticker(s) failed enrichment (non-fatal): {option_failures}")
+            for t in option_failures:
+                logger.warning(f"  ⚠️  {t}: option data unavailable, will use CSV price")
 
     # Extract analysis fields if available
     analysis = None
