@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { Sidebar } from "@/components/layout/sidebar";
-import { createClient } from "@/lib/supabase/server";
+import { cookies } from "next/headers";
 
 export const metadata: Metadata = {
   title: "Financial Dashboard",
@@ -13,10 +13,8 @@ export default async function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-
-  const isAuth = !!user;
+  const cookieStore = await cookies();
+  const isAuth = !!cookieStore.get("fin_session")?.value;
 
   return (
     <html lang="en" className="dark">
@@ -24,8 +22,8 @@ export default async function RootLayout({
         {isAuth ? (
           <div className="flex min-h-screen">
             <Sidebar />
-            {/* Desktop: push content right of sidebar. Mobile: full width + bottom nav padding */}
-            <main className="flex-1 md:ml-56 lg:ml-64 min-h-screen pb-20 md:pb-0">
+            {/* Push content right of sidebar */}
+            <main className="flex-1 ml-56 lg:ml-64 min-h-screen">
               {children}
             </main>
           </div>
