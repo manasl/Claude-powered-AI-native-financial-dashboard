@@ -8,6 +8,7 @@ export async function getLatestAnalysis(): Promise<AnalysisReport | null> {
     .from("analysis_reports")
     .select("*, pipeline_runs(run_at, model, input_tokens, output_tokens)")
     .order("analysis_date", { ascending: false })
+    .order("created_at", { ascending: false })
     .limit(1)
     .single();
   return data ?? null;
@@ -21,6 +22,7 @@ export async function getLatestRecommendations(): Promise<Recommendation[]> {
     .from("analysis_reports")
     .select("id")
     .order("analysis_date", { ascending: false })
+    .order("created_at", { ascending: false })
     .limit(1)
     .single();
 
@@ -43,6 +45,7 @@ export async function getTickerRecommendation(ticker: string): Promise<Recommend
     .from("analysis_reports")
     .select("id")
     .order("analysis_date", { ascending: false })
+    .order("created_at", { ascending: false })
     .limit(1)
     .single();
 
