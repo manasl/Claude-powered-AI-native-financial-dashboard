@@ -130,7 +130,11 @@ export async function GET(request: NextRequest) {
 
       let proc: ReturnType<typeof spawn>;
       try {
-        proc = spawn(PYTHON, ["run_pipeline.py", "--mode", mode], {
+        // analyze mode has its own dedicated script (run_analyze.py) that skips
+        // Plaid fetch/enrichment and only runs notebooks 04+05 + Supabase sync.
+        const script = mode === "analyze" ? "run_analyze.py" : "run_pipeline.py";
+        const scriptArgs = mode === "analyze" ? [] : ["--mode", mode];
+        proc = spawn(PYTHON, [script, ...scriptArgs], {
           cwd: AGENT_DIR,
           env: { ...process.env, PYTHONUNBUFFERED: "1" },
         });

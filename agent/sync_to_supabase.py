@@ -357,7 +357,60 @@ def main(trigger: str = "scheduled", force: bool = False):
     if existing.data:
         existing_status = existing.data[0]["status"]
         if existing_status == "success" and not force:
-            logger.info(f"⚠️  Pipeline run at {run_at_ts} already synced successfully (id={existing.data[0]['id']}). Skipping.")
+            if analysis_data and analysis:
+                # Portfolio already synced but we have fresh analysis — upsert it
+                existing_run_id = existing.data[0]["id"]
+                snapshot_date = generated_at[:10]
+                logger.info(f"⚠️  Portfolio already synced (id={existing_run_id}). Syncing fresh analysis only.")
+                old_reports = supabase.table("analysis_reports").select("id").eq("run_id", existing_run_id).execute()
+                for old in old_reports.data:
+                    supabase.table("recommendations").delete().eq("report_id", old["id"]).execute()
+                    supabase.table("analysis_reports").delete().eq("id", old["id"]).execute()
+                assessment = analysis.get("portfolio_assessment", {})
+                report_result = (
+                    supabase.table("analysis_reports")
+                    .insert({
+                        "run_id": existing_run_id,
+                        "analysis_date": analysis.get("analysis_date", snapshot_date),
+                        "overall_health": assessment.get("overall_health", "moderate"),
+                        "summary": assessment.get("summary", ""),
+                        "sector_concentration": assessment.get("sector_concentration", ""),
+                        "risk_level": assessment.get("risk_level", "moderate"),
+                        "top_concern": assessment.get("top_concern", ""),
+                        "action_items": analysis.get("action_items", []),
+                        "watchlist": analysis.get("watchlist", []),
+                        "retirement_summary": analysis.get("retirement_summary"),
+                    })
+                    .execute()
+                )
+                report_id = report_result.data[0]["id"]
+                logger.info(f"   ✅ analysis_reports: id={report_id}")
+                recs_raw = analysis.get("recommendations", [])
+                logger.info(f"📝 Inserting {len(recs_raw)} recommendations…")
+                rec_rows = []
+                for r in recs_raw:
+                    rec_rows.append({
+                        "report_id": report_id,
+                        "ticker": r.get("ticker"),
+                        "name": r.get("name", ""),
+                        "brokerage": r.get("brokerage", ""),
+                        "action": r.get("action", "HOLD"),
+                        "confidence": r.get("confidence", "low"),
+                        "urgency": r.get("urgency", "no_rush"),
+                        "thesis": r.get("thesis", ""),
+                        "bull_case": r.get("bull_case", ""),
+                        "bear_case": r.get("bear_case", ""),
+                        "key_signals": r.get("key_signals", []),
+                        "risk_factors": r.get("risk_factors", []),
+                        "position_note": r.get("position_note", ""),
+                    })
+                for i in range(0, len(rec_rows), 100):
+                    chunk = rec_rows[i : i + 100]
+                    supabase.table("recommendations").insert(chunk).execute()
+                logger.info(f"   ✅ recommendations: {len(rec_rows)} rows")
+                mark_refresh_complete(supabase)
+            else:
+                logger.info(f"⚠️  Pipeline run at {run_at_ts} already synced successfully (id={existing.data[0]['id']}). Skipping.")
             return
         elif existing_status == "success" and force:
             logger.info(f"⚠️  Already synced but --force set — re-syncing.")

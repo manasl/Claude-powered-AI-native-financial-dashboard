@@ -32,6 +32,7 @@ dependencies = [
 
     # Notifications
     "sendgrid>=6.10.0",
+    "schedule>=1.2.0",
 
     # Supabase sync
     "supabase>=2.28.0",

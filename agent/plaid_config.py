@@ -16,9 +16,12 @@ PLAID_ENV = os.getenv("PLAID_ENV", "production")
 
 PLAID_ENV_URLS = {
     "sandbox": plaid.Environment.Sandbox,
-    "development": plaid.Environment.Development,
     "production": plaid.Environment.Production,
 }
+
+# Fallback for deprecated 'development' environment
+if PLAID_ENV == "development":
+    PLAID_ENV = "production"
 
 
 def get_plaid_client() -> plaid_api.PlaidApi:
