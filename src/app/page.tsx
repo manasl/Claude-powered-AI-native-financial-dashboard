@@ -13,6 +13,7 @@ import { getRsuGrants } from "@/lib/queries/rsu";
 import { DashboardContent } from "@/components/dashboard/dashboard-content";
 
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 export default async function DashboardPage() {
   const [snapshot, analysis, recommendations, holdings, enrichment, manualAssets, manualDebts, rsuGrants] =

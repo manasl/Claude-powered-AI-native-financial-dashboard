@@ -6,8 +6,10 @@ export async function getLatestSnapshot(): Promise<PortfolioSnapshot | null> {
   const supabase = await createClient();
   const { data } = await supabase
     .from("portfolio_snapshots")
-    .select("*, pipeline_runs(run_at, model, input_tokens, output_tokens)")
+    .select("*, pipeline_runs!inner(status, run_at, model, input_tokens, output_tokens)")
+    .eq("pipeline_runs.status", "success")
     .order("snapshot_date", { ascending: false })
+    .order("created_at", { ascending: false })
     .limit(1)
     .single();
   return data ?? null;
@@ -20,8 +22,10 @@ export async function getLatestHoldings(): Promise<Holding[]> {
   // Get latest snapshot id first
   const { data: snap } = await supabase
     .from("portfolio_snapshots")
-    .select("id")
+    .select("id, pipeline_runs!inner(status)")
+    .eq("pipeline_runs.status", "success")
     .order("snapshot_date", { ascending: false })
+    .order("created_at", { ascending: false })
     .limit(1)
     .single();
 
@@ -42,8 +46,10 @@ export async function getLatestEnrichment(): Promise<Enrichment[]> {
 
   const { data: snap } = await supabase
     .from("portfolio_snapshots")
-    .select("id")
+    .select("id, pipeline_runs!inner(status)")
+    .eq("pipeline_runs.status", "success")
     .order("snapshot_date", { ascending: false })
+    .order("created_at", { ascending: false })
     .limit(1)
     .single();
 
@@ -63,8 +69,10 @@ export async function getTickerEnrichment(ticker: string): Promise<Enrichment | 
 
   const { data: snap } = await supabase
     .from("portfolio_snapshots")
-    .select("id")
+    .select("id, pipeline_runs!inner(status)")
+    .eq("pipeline_runs.status", "success")
     .order("snapshot_date", { ascending: false })
+    .order("created_at", { ascending: false })
     .limit(1)
     .single();
 
@@ -85,7 +93,8 @@ export async function getPortfolioHistory() {
   const supabase = await createClient();
   const { data } = await supabase
     .from("portfolio_snapshots")
-    .select("snapshot_date, total_value, total_cost_basis, total_gain_loss, brokerages_json, asset_types_json")
+    .select("snapshot_date, total_value, total_cost_basis, total_gain_loss, brokerages_json, asset_types_json, pipeline_runs!inner(status)")
+    .eq("pipeline_runs.status", "success")
     .order("snapshot_date", { ascending: true });
   return data ?? [];
 }

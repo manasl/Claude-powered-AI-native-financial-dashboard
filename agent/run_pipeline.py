@@ -87,15 +87,15 @@ def main():
     # Map mode → notebooks + sync trigger label
     if args.mode == "enrich":
         notebooks = NOTEBOOKS_ENRICH
-        trigger = "enrich"
+        trigger = "manual"
         label = "Resync Market Data (yfinance)"
     elif args.mode == "sync":
         notebooks = NOTEBOOKS_SYNC
-        trigger = "sync"
+        trigger = "manual"
         label = "Fetch Data (Plaid + enrichment)"
     elif args.mode == "analyze":
         notebooks = NOTEBOOKS_ANALYZE
-        trigger = "analyze"
+        trigger = "manual"
         label = "Analyze Portfolio (Claude)"
     else:
         notebooks = NOTEBOOKS_FULL

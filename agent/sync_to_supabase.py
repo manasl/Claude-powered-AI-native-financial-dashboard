@@ -12,7 +12,9 @@ Requires:
     uv add supabase python-dotenv
 """
 
+import copy
 import json
+import logging
 import math
 import os
 import sys
@@ -32,6 +34,35 @@ LATEST_ANALYSIS = REPORTS_DIR / "latest_analysis.json"
 load_dotenv(PROJECT_DIR / ".env")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+
+# ── Logging ───────────────────────────────────────────────────────────────────
+LOG_DIR = PROJECT_DIR / "logs"
+LOG_DIR.mkdir(exist_ok=True)
+LOG_FILE = LOG_DIR / "resync.log"
+ERROR_FILE = LOG_DIR / "error.log"
+
+logger = logging.getLogger("resync")
+logger.setLevel(logging.DEBUG)
+
+# Main log file
+_file_handler = logging.FileHandler(LOG_FILE, mode="a")
+_file_handler.setFormatter(
+    logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+)
+logger.addHandler(_file_handler)
+
+# Dedicated error log file
+_error_handler = logging.FileHandler(ERROR_FILE, mode="a")
+_error_handler.setLevel(logging.ERROR)
+_error_handler.setFormatter(
+    logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+)
+logger.addHandler(_error_handler)
+
+# Also log to stdout so SSE stream captures output
+_stream_handler = logging.StreamHandler(sys.stdout)
+_stream_handler.setFormatter(logging.Formatter("%(message)s"))
+logger.addHandler(_stream_handler)
 
 
 # ── Helper utilities ──────────────────────────────────────────────────────────
@@ -103,44 +134,197 @@ def compute_account_category_summary(holdings: list, total_value: float) -> dict
     return cats
 
 
+# ── Enrichment validation & price update ─────────────────────────────────────
+
+SKIP_TYPES = {"cash"}
+
+
+def validate_enrichment_prices(
+    holdings: list,
+    enrichment_map: dict,
+) -> tuple[dict[str, float], list[str]]:
+    """Validate that every enrichable holding has a valid yfinance price.
+
+    Returns:
+        (valid_prices, errors)
+        valid_prices: {ticker: new_price} for all validated tickers
+        errors: list of human-readable error strings for failed tickers
+    """
+    valid_prices: dict[str, float] = {}
+    errors: list[str] = []
+    seen: set[str] = set()
+
+    for h in holdings:
+        ticker = h.get("ticker")
+        htype = h.get("type", "equity")
+
+        if not ticker or htype in SKIP_TYPES:
+            continue
+        if ticker in seen:
+            continue
+        seen.add(ticker)
+
+        csv_price = h.get("price")
+        enrichment = enrichment_map.get(ticker)
+
+        if not enrichment:
+            errors.append(f"{ticker}: no enrichment data found")
+            continue
+
+        yf_price = enrichment.get("technicals", {}).get("price")
+
+        # After clean(), NaN becomes None
+        if yf_price is None or not isinstance(yf_price, (int, float)) or yf_price <= 0:
+            errors.append(f"{ticker}: invalid yfinance price ({yf_price})")
+            continue
+
+        logger.info(f"  ✅ {ticker}: ${csv_price} (csv) → ${yf_price:.2f} (yfinance)")
+        valid_prices[ticker] = float(yf_price)
+
+    return valid_prices, errors
+
+
+def apply_enriched_prices(
+    holdings: list,
+    valid_prices: dict[str, float],
+    summary: dict,
+) -> tuple[list[dict], dict]:
+    """Update holdings prices from enrichment data and recompute summary.
+
+    Returns:
+        (updated_holdings, updated_summary)
+    """
+    updated = copy.deepcopy(holdings)
+
+    for h in updated:
+        ticker = h.get("ticker")
+        if ticker not in valid_prices:
+            continue
+
+        new_price = valid_prices[ticker]
+        h["price"] = round(new_price, 2)
+
+        qty = h.get("quantity")
+        if qty is not None:
+            # Standard options contracts represent 100 shares
+            multiplier = 100 if h.get("type") == "option" else 1
+            h["value"] = round(new_price * qty * multiplier, 2)
+
+        cost = h.get("cost_basis")
+        if cost is not None and h.get("value") is not None:
+            h["gain_loss"] = round(h["value"] - cost, 2)
+            h["gain_loss_pct"] = round((h["gain_loss"] / cost) * 100, 2) if cost != 0 else 0.0
+
+    # Recompute summary totals
+    total_value = sum(h.get("value") or 0 for h in updated)
+    total_cost_basis = sum(h.get("cost_basis") or 0 for h in updated if h.get("cost_basis") is not None)
+    total_gain_loss = total_value - total_cost_basis
+
+    new_summary = copy.deepcopy(summary)
+    new_summary["total_value"] = round(total_value, 2)
+    new_summary["total_cost_basis"] = round(total_cost_basis, 2)
+    new_summary["total_gain_loss"] = round(total_gain_loss, 2)
+
+    return updated, new_summary
+
+
+# ── Write verification ────────────────────────────────────────────────────────
+
+def verify_db_writes(supabase, snapshot_id: str, expected_holdings: int, expected_enrichment: int) -> list[str]:
+    """Query back written rows and verify counts match expectations."""
+    errors: list[str] = []
+
+    h_result = supabase.table("holdings").select("id", count="exact").eq("snapshot_id", snapshot_id).execute()
+    h_count = h_result.count if h_result.count is not None else len(h_result.data)
+    if h_count != expected_holdings:
+        errors.append(f"holdings: expected {expected_holdings}, got {h_count}")
+    else:
+        logger.info(f"  ✅ holdings: {h_count}/{expected_holdings} rows verified")
+
+    e_result = supabase.table("enrichment").select("id", count="exact").eq("snapshot_id", snapshot_id).execute()
+    e_count = e_result.count if e_result.count is not None else len(e_result.data)
+    if e_count != expected_enrichment:
+        errors.append(f"enrichment: expected {expected_enrichment}, got {e_count}")
+    else:
+        logger.info(f"  ✅ enrichment: {e_count}/{expected_enrichment} rows verified")
+
+    return errors
+
+
 # ── Main sync logic ───────────────────────────────────────────────────────────
 
 def main(trigger: str = "scheduled", force: bool = False):
     if not SUPABASE_URL or not SUPABASE_KEY:
-        print("❌  Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in .env")
+        logger.error("❌  Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in .env")
         sys.exit(1)
 
     try:
         from supabase import create_client
     except ImportError:
-        print("❌  supabase not installed. Run: uv add supabase python-dotenv")
+        logger.error("❌  supabase not installed. Run: uv add supabase python-dotenv")
         sys.exit(1)
 
     supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-    print(f"\n🔗 Connected to Supabase: {SUPABASE_URL[:40]}…")
+    logger.info(f"\n🔗 Connected to Supabase: {SUPABASE_URL[:40]}…")
 
     # ── Load JSON files ────────────────────────────────────────────────────────
-    print("\n📂 Loading pipeline output files…")
+    logger.info("\n📂 Loading pipeline output files…")
 
     if not ENRICHED_FILE.exists():
-        print(f"❌  {ENRICHED_FILE} not found — run the pipeline first")
-        sys.exit(1)
-    if not LATEST_ANALYSIS.exists():
-        print(f"❌  {LATEST_ANALYSIS} not found — run the pipeline first")
+        logger.error(f"❌  {ENRICHED_FILE} not found — run the pipeline first")
         sys.exit(1)
 
     enriched = clean(load_json(ENRICHED_FILE))
-    analysis_data = clean(load_json(LATEST_ANALYSIS))
+
+    # Analysis data is optional (not present during enrich-only mode)
+    analysis_data = None
+    if LATEST_ANALYSIS.exists():
+        analysis_data = clean(load_json(LATEST_ANALYSIS))
+        logger.info("   ✅ Loaded enriched_portfolio.json + latest_analysis.json")
+    else:
+        logger.info("   ✅ Loaded enriched_portfolio.json (no analysis — enrich-only mode)")
 
     holdings_raw = enriched["holdings"]
     enrichment_map = enriched.get("enrichment", {})
+    failed_tickers = enriched.get("failed_tickers", [])
     summary = enriched["summary"]
     generated_at = enriched["generated_at"]  # ISO timestamp
+    
+    if failed_tickers:
+        logger.error(f"❌  {len(failed_tickers)} tickers failed to enrich: {failed_tickers}")
+        for t in failed_tickers:
+            logger.error(f"  ❌ {t}: Check yfinance availability or ticker symbol")
+        error_msg = f"Enrichment failed for {len(failed_tickers)} ticker(s): " + ", ".join(failed_tickers)
+        mark_refresh_complete(supabase, error=error_msg)
+        sys.exit(1)
 
-    analysis = analysis_data["analysis"]
-    model_used = analysis_data.get("model", "claude-opus-4-5")
-    usage = analysis_data.get("usage", {})
-    analysis_generated = analysis_data.get("generated_at", generated_at)
+    # Extract analysis fields if available
+    analysis = None
+    model_used = "unknown"
+    usage = {}
+    if analysis_data:
+        analysis = analysis_data["analysis"]
+        model_used = analysis_data.get("model", "claude-opus-4-5")
+        usage = analysis_data.get("usage", {})
+
+    # ── Validate enrichment prices ─────────────────────────────────────────────
+    logger.info("\n🔍 Validating enrichment prices…")
+    valid_prices, validation_errors = validate_enrichment_prices(holdings_raw, enrichment_map)
+
+    if validation_errors:
+        for err in validation_errors:
+            logger.error(f"  ❌ {err}")
+        error_msg = f"Enrichment validation failed for {len(validation_errors)} ticker(s): " + "; ".join(validation_errors)
+        logger.error(f"\n❌ ABORTING sync: {error_msg}")
+        mark_refresh_complete(supabase, error=error_msg)
+        sys.exit(1)
+
+    logger.info(f"✅ All {len(valid_prices)} enrichable tickers validated")
+
+    # ── Apply enriched prices to holdings ──────────────────────────────────────
+    logger.info("\n📝 Applying enriched prices to holdings…")
+    holdings_raw, summary = apply_enriched_prices(holdings_raw, valid_prices, summary)
+    logger.info(f"   Updated: total_value=${summary['total_value']:,.2f}, total_gain_loss=${summary['total_gain_loss']:,.2f}")
 
     # ── Compute summary aggregates ─────────────────────────────────────────────
     brokerages_json = compute_brokerage_summary(holdings_raw)
@@ -161,80 +345,84 @@ def main(trigger: str = "scheduled", force: bool = False):
     else:
         account_categories_json = compute_account_category_summary(holdings_raw, summary["total_value"])
 
-    # ── 1. Idempotency check — skip if already synced ──────────────────────────
-    # Use analysis generated_at as a unique fingerprint for this pipeline run
-    run_at_ts = analysis_generated  # ISO 8601
-
+    # ── 1. Idempotency check ──────────────────────────────────────────────────
+    run_at_ts = generated_at
     existing = (
         supabase.table("pipeline_runs")
-        .select("id")
+        .select("id, status")
         .eq("run_at", run_at_ts)
         .execute()
     )
-    if existing.data and not force:
-        print(f"⚠️  Pipeline run at {run_at_ts} already synced (id={existing.data[0]['id']}). Skipping.")
-        return
-    elif existing.data and force:
-        print(f"⚠️  Already synced but --force set — updating account_categories_json on latest snapshot.")
-        # Just patch account_categories_json on the most recent snapshot and exit
-        latest_snap = (
-            supabase.table("portfolio_snapshots")
-            .select("id")
-            .order("snapshot_date", desc=True)
-            .limit(1)
-            .single()
-            .execute()
-        )
-        if latest_snap.data:
-            supabase.table("portfolio_snapshots").update(
-                {"account_categories_json": account_categories_json}
-            ).eq("id", latest_snap.data["id"]).execute()
-            print(f"   ✅ Updated account_categories_json on snapshot {latest_snap.data['id']}")
-            for cat, info in account_categories_json.items():
-                print(f"      {cat:12s}: ${info['value']:>12,.2f}  ({info['positions']} positions)")
-        return
+    
+    if existing.data:
+        existing_status = existing.data[0]["status"]
+        if existing_status == "success" and not force:
+            logger.info(f"⚠️  Pipeline run at {run_at_ts} already synced successfully (id={existing.data[0]['id']}). Skipping.")
+            return
+        elif existing_status == "success" and force:
+            logger.info(f"⚠️  Already synced but --force set — re-syncing.")
+        elif existing_status in ("running", "failed"):
+            logger.info(f"⚠️  Found existing {existing_status} run for {run_at_ts}. Re-attempting.")
 
-    # ── 2. Insert pipeline_run ─────────────────────────────────────────────────
-    print("\n📝 Inserting pipeline_run…")
-    run_result = (
-        supabase.table("pipeline_runs")
-        .insert({
-            "run_at": run_at_ts,
-            "trigger": trigger,
-            "status": "success",
-            "model": model_used,
-            "input_tokens": usage.get("input_tokens", 0),
-            "output_tokens": usage.get("output_tokens", 0),
-            "duration_s": 0,  # not tracked at sync time
-        })
-        .execute()
-    )
-    run_id = run_result.data[0]["id"]
-    print(f"   ✅ pipeline_runs: id={run_id}")
+    # ── 2. Insert/Get pipeline_run (status='running') ──────────────────────────
+    logger.info("\n📝 Preparing pipeline_run…")
+    run_payload = {
+        "run_at": run_at_ts,
+        "trigger": trigger,
+        "status": "running",
+        "model": model_used if analysis_data else None,
+        "input_tokens": usage.get("input_tokens", 0) if analysis_data else 0,
+        "output_tokens": usage.get("output_tokens", 0) if analysis_data else 0,
+        "duration_s": 0,
+    }
+    
+    if existing.data:
+        run_id = existing.data[0]["id"]
+        supabase.table("pipeline_runs").update(run_payload).eq("id", run_id).execute()
+        logger.info(f"   ✅ pipeline_runs updated: id={run_id} (status=running)")
+    else:
+        run_result = supabase.table("pipeline_runs").insert(run_payload).execute()
+        run_id = run_result.data[0]["id"]
+        logger.info(f"   ✅ pipeline_runs inserted: id={run_id} (status=running)")
 
     # ── 3. Insert portfolio_snapshot ───────────────────────────────────────────
-    print("📝 Inserting portfolio_snapshot…")
+    logger.info("📝 Inserting portfolio_snapshot…")
     snapshot_date = generated_at[:10]  # YYYY-MM-DD
-    snap_result = (
+    
+    # Check if snapshot already exists for this run (can happen if retrying a 'failed' or 'running' run)
+    existing_snap = (
         supabase.table("portfolio_snapshots")
-        .insert({
-            "run_id": run_id,
-            "snapshot_date": snapshot_date,
-            "total_value": summary["total_value"],
-            "total_cost_basis": summary.get("total_cost_basis"),
-            "total_gain_loss": summary.get("total_gain_loss"),
-            "total_positions": summary["total_positions"],
-            "brokerages_json": brokerages_json,
-            "asset_types_json": asset_types_json,
-            "account_categories_json": account_categories_json,
-        })
+        .select("id")
+        .eq("run_id", run_id)
         .execute()
     )
-    snapshot_id = snap_result.data[0]["id"]
-    print(f"   ✅ portfolio_snapshots: id={snapshot_id}, date={snapshot_date}")
+    
+    snap_payload = {
+        "run_id": run_id,
+        "snapshot_date": snapshot_date,
+        "total_value": summary["total_value"],
+        "total_cost_basis": summary.get("total_cost_basis"),
+        "total_gain_loss": summary.get("total_gain_loss"),
+        "total_positions": summary["total_positions"],
+        "brokerages_json": brokerages_json,
+        "asset_types_json": asset_types_json,
+        "account_categories_json": account_categories_json,
+    }
+    
+    if existing_snap.data:
+        snapshot_id = existing_snap.data[0]["id"]
+        supabase.table("portfolio_snapshots").update(snap_payload).eq("id", snapshot_id).execute()
+        # Clean up old data for this snapshot to ensure a clean rewrite
+        supabase.table("holdings").delete().eq("snapshot_id", snapshot_id).execute()
+        supabase.table("enrichment").delete().eq("snapshot_id", snapshot_id).execute()
+        logger.info(f"   ✅ portfolio_snapshots updated: id={snapshot_id}, cleaned old holdings/enrichment")
+    else:
+        snap_result = supabase.table("portfolio_snapshots").insert(snap_payload).execute()
+        snapshot_id = snap_result.data[0]["id"]
+        logger.info(f"   ✅ portfolio_snapshots: id={snapshot_id}, date={snapshot_date}")
 
     # ── 4. Insert holdings (batch) ─────────────────────────────────────────────
-    print(f"📝 Inserting {len(holdings_raw)} holdings…")
+    logger.info(f"📝 Inserting {len(holdings_raw)} holdings…")
     holdings_rows = []
     for h in holdings_raw:
         holdings_rows.append({
@@ -254,14 +442,13 @@ def main(trigger: str = "scheduled", force: bool = False):
             "account_subtype": h.get("account_subtype"),
         })
 
-    # Batch insert in chunks of 100
     for i in range(0, len(holdings_rows), 100):
         chunk = holdings_rows[i : i + 100]
         supabase.table("holdings").insert(chunk).execute()
-    print(f"   ✅ holdings: {len(holdings_rows)} rows")
+    logger.info(f"   ✅ holdings: {len(holdings_rows)} rows")
 
     # ── 5. Insert enrichment (batch, one row per unique ticker) ───────────────
-    print(f"📝 Inserting enrichment for {len(enrichment_map)} tickers…")
+    logger.info(f"📝 Inserting enrichment for {len(enrichment_map)} tickers…")
     enrichment_rows = []
     for ticker, data in enrichment_map.items():
         enrichment_rows.append({
@@ -279,60 +466,65 @@ def main(trigger: str = "scheduled", force: bool = False):
     for i in range(0, len(enrichment_rows), 50):
         chunk = enrichment_rows[i : i + 50]
         supabase.table("enrichment").insert(chunk).execute()
-    print(f"   ✅ enrichment: {len(enrichment_rows)} rows")
+    logger.info(f"   ✅ enrichment: {len(enrichment_rows)} rows")
 
-    # ── 6. Insert analysis_report ──────────────────────────────────────────────
-    print("📝 Inserting analysis_report…")
-    assessment = analysis.get("portfolio_assessment", {})
-    report_result = (
-        supabase.table("analysis_reports")
-        .insert({
-            "run_id": run_id,
-            "analysis_date": analysis.get("analysis_date", snapshot_date),
-            "overall_health": assessment.get("overall_health", "moderate"),
-            "summary": assessment.get("summary", ""),
-            "sector_concentration": assessment.get("sector_concentration", ""),
-            "risk_level": assessment.get("risk_level", "moderate"),
-            "top_concern": assessment.get("top_concern", ""),
-            "action_items": analysis.get("action_items", []),
-            "watchlist": analysis.get("watchlist", []),
-            "retirement_summary": analysis.get("retirement_summary"),
-        })
-        .execute()
-    )
-    report_id = report_result.data[0]["id"]
-    print(f"   ✅ analysis_reports: id={report_id}")
+    # ── 6. Insert analysis_report (only if analysis data exists) ──────────────
+    report_id = None
+    if analysis_data and analysis:
+        logger.info("📝 Inserting analysis_report…")
+        assessment = analysis.get("portfolio_assessment", {})
+        report_result = (
+            supabase.table("analysis_reports")
+            .insert({
+                "run_id": run_id,
+                "analysis_date": analysis.get("analysis_date", snapshot_date),
+                "overall_health": assessment.get("overall_health", "moderate"),
+                "summary": assessment.get("summary", ""),
+                "sector_concentration": assessment.get("sector_concentration", ""),
+                "risk_level": assessment.get("risk_level", "moderate"),
+                "top_concern": assessment.get("top_concern", ""),
+                "action_items": analysis.get("action_items", []),
+                "watchlist": analysis.get("watchlist", []),
+                "retirement_summary": analysis.get("retirement_summary"),
+            })
+            .execute()
+        )
+        report_id = report_result.data[0]["id"]
+        logger.info(f"   ✅ analysis_reports: id={report_id}")
 
-    # ── 7. Insert recommendations (batch) ─────────────────────────────────────
-    recs_raw = analysis.get("recommendations", [])
-    print(f"📝 Inserting {len(recs_raw)} recommendations…")
-    rec_rows = []
-    for r in recs_raw:
-        rec_rows.append({
-            "report_id": report_id,
-            "ticker": r.get("ticker"),
-            "name": r.get("name", ""),
-            "brokerage": r.get("brokerage", ""),
-            "action": r.get("action", "HOLD"),
-            "confidence": r.get("confidence", "low"),
-            "urgency": r.get("urgency", "no_rush"),
-            "thesis": r.get("thesis", ""),
-            "bull_case": r.get("bull_case", ""),
-            "bear_case": r.get("bear_case", ""),
-            "key_signals": r.get("key_signals", []),
-            "risk_factors": r.get("risk_factors", []),
-            "position_note": r.get("position_note", ""),
-        })
+        # ── 7. Insert recommendations (batch) ─────────────────────────────────
+        recs_raw = analysis.get("recommendations", [])
+        logger.info(f"📝 Inserting {len(recs_raw)} recommendations…")
+        rec_rows = []
+        for r in recs_raw:
+            rec_rows.append({
+                "report_id": report_id,
+                "ticker": r.get("ticker"),
+                "name": r.get("name", ""),
+                "brokerage": r.get("brokerage", ""),
+                "action": r.get("action", "HOLD"),
+                "confidence": r.get("confidence", "low"),
+                "urgency": r.get("urgency", "no_rush"),
+                "thesis": r.get("thesis", ""),
+                "bull_case": r.get("bull_case", ""),
+                "bear_case": r.get("bear_case", ""),
+                "key_signals": r.get("key_signals", []),
+                "risk_factors": r.get("risk_factors", []),
+                "position_note": r.get("position_note", ""),
+            })
 
-    for i in range(0, len(rec_rows), 100):
-        chunk = rec_rows[i : i + 100]
-        supabase.table("recommendations").insert(chunk).execute()
-    print(f"   ✅ recommendations: {len(rec_rows)} rows")
+        for i in range(0, len(rec_rows), 100):
+            chunk = rec_rows[i : i + 100]
+            supabase.table("recommendations").insert(chunk).execute()
+        logger.info(f"   ✅ recommendations: {len(rec_rows)} rows")
+    else:
+        logger.info("ℹ️  Skipping analysis_report & recommendations (enrich-only mode)")
 
     # ── 8. Update RSU current price from SNOW enrichment ──────────────────────
     snow_data = enrichment_map.get("SNOW", {})
     snow_price = (
         snow_data.get("technicals", {}).get("current_price")
+        or snow_data.get("technicals", {}).get("price")
         or snow_data.get("fundamentals", {}).get("current_price")
     )
     if snow_price:
@@ -341,17 +533,17 @@ def main(trigger: str = "scheduled", force: bool = False):
                 "current_price": snow_price,
                 "price_updated_at": generated_at,
             }).eq("ticker", "SNOW").execute()
-            print(f"   ✅ rsu_grants: SNOW price updated to ${snow_price:.2f}")
+            logger.info(f"   ✅ rsu_grants: SNOW price updated to ${snow_price:.2f}")
         except Exception as e:
-            print(f"   ⚠️  Could not update SNOW RSU price: {e}")
+            logger.warning(f"   ⚠️  Could not update SNOW RSU price: {e}")
     else:
-        print("   ⚠️  SNOW enrichment data not found — RSU price not updated")
+        logger.info("   ⚠️  SNOW enrichment data not found — RSU price not updated")
 
     # ── 9. Upsert transactions (dedup on plaid_transaction_id) ────────────────
     TRANSACTIONS_FILE = PROJECT_DIR / "transactions.json"
     if TRANSACTIONS_FILE.exists():
         transactions_raw = clean(load_json(TRANSACTIONS_FILE))
-        print(f"📝 Upserting {len(transactions_raw)} transactions…")
+        logger.info(f"📝 Upserting {len(transactions_raw)} transactions…")
         txn_rows = []
         for txn in transactions_raw:
             txn_rows.append({
@@ -376,16 +568,16 @@ def main(trigger: str = "scheduled", force: bool = False):
             supabase.table("transactions").upsert(
                 chunk, on_conflict="plaid_transaction_id"
             ).execute()
-        print(f"   ✅ transactions: {len(txn_rows)} rows upserted")
+        logger.info(f"   ✅ transactions: {len(txn_rows)} rows upserted")
     else:
-        print("   ℹ️  transactions.json not found — skipping (run 02b notebook first)")
+        logger.info("   ℹ️  transactions.json not found — skipping (run 02b notebook first)")
 
     # ── 10. Insert raw Plaid responses ─────────────────────────────────────────
     RAW_PLAID_DIR = PROJECT_DIR / "raw_plaid_responses"
     if RAW_PLAID_DIR.exists():
         raw_files = sorted(RAW_PLAID_DIR.glob("*.json"))
         if raw_files:
-            print(f"📝 Inserting {len(raw_files)} raw Plaid response(s)…")
+            logger.info(f"📝 Inserting {len(raw_files)} raw Plaid response(s)…")
             raw_rows = []
             for rf in raw_files:
                 try:
@@ -400,20 +592,40 @@ def main(trigger: str = "scheduled", force: bool = False):
                         "fetched_at": fetched_at,
                     })
                 except Exception as e:
-                    print(f"   ⚠️  Could not read {rf.name}: {e}")
+                    logger.warning(f"   ⚠️  Could not read {rf.name}: {e}")
             for i in range(0, len(raw_rows), 50):
                 chunk = raw_rows[i : i + 50]
                 supabase.table("raw_plaid_responses").insert(chunk).execute()
-            print(f"   ✅ raw_plaid_responses: {len(raw_rows)} rows inserted")
+            logger.info(f"   ✅ raw_plaid_responses: {len(raw_rows)} rows inserted")
         else:
-            print("   ℹ️  raw_plaid_responses/ is empty — skipping")
+            logger.info("   ℹ️  raw_plaid_responses/ is empty — skipping")
     else:
-        print("   ℹ️  raw_plaid_responses/ not found — skipping (run 02b notebook first)")
+        logger.info("   ℹ️  raw_plaid_responses/ not found — skipping (run 02b notebook first)")
 
+    # ── 11. Verify writes ──────────────────────────────────────────────────────
+    logger.info("\n🔍 Verifying database writes…")
+    verify_errors = verify_db_writes(supabase, snapshot_id, len(holdings_rows), len(enrichment_rows))
+    if verify_errors:
+        for err in verify_errors:
+            logger.error(f"  ❌ VERIFY FAIL: {err}")
+        error_msg = "Write verification failed: " + "; ".join(verify_errors)
+        supabase.table("pipeline_runs").update({"status": "failed"}).eq("id", run_id).execute()
+        mark_refresh_complete(supabase, error=error_msg)
+        sys.exit(1)
+    
+    # ── 12. Finalize: Set status to success ───────────────────────────────────
+    logger.info("\n✅ Verification passed. Finalizing run.")
+    supabase.table("pipeline_runs").update({"status": "success"}).eq("id", run_id).execute()
+    
     # ── Done ──────────────────────────────────────────────────────────────────
-    print(f"\n🎉 Sync complete! run_id={run_id}")
-    print(f"   Snapshot: {snapshot_date} | ${summary['total_value']:,.0f} | {summary['total_positions']} positions")
-    print(f"   Analysis: {assessment.get('overall_health', '?')} health | {len(recs_raw)} recommendations")
+    logger.info(f"\n🎉 Sync complete! run_id={run_id}")
+    logger.info(f"   Snapshot: {snapshot_date} | ${summary['total_value']:,.0f} | {summary['total_positions']} positions")
+    if analysis:
+        assessment = analysis.get("portfolio_assessment", {})
+        recs_raw = analysis.get("recommendations", [])
+        logger.info(f"   Analysis: {assessment.get('overall_health', '?')} health | {len(recs_raw)} recommendations")
+
+    mark_refresh_complete(supabase)
 
 
 # ── Mark refresh request complete (if triggered by dashboard) ──────────────────
@@ -439,9 +651,9 @@ def mark_refresh_complete(supabase, error: str | None = None):
         if error:
             update["error_message"] = error
         supabase.table("refresh_requests").update(update).eq("id", req_id).execute()
-        print(f"   ✅ Marked refresh_request {req_id} as {'failed' if error else 'completed'}")
+        logger.info(f"   ✅ Marked refresh_request {req_id} as {'failed' if error else 'completed'}")
     except Exception as e:
-        print(f"   ⚠️  Could not update refresh_request: {e}")
+        logger.warning(f"   ⚠️  Could not update refresh_request: {e}")
 
 
 if __name__ == "__main__":
@@ -462,8 +674,10 @@ if __name__ == "__main__":
     try:
         main(trigger=args.trigger, force=args.force)
     except Exception as e:
-        print(f"\n❌ Sync failed: {e}")
-        # Try to mark any running refresh request as failed
+        logger.error(f"\n❌ Sync failed: {e}")
+        # Try to mark the pipeline run as failed if we have a run_id
+        # Note: run_id might not be in scope if it fails before it's defined
+        # But we try to mark any running refresh request as failed regardless
         if SUPABASE_URL and SUPABASE_KEY:
             try:
                 from supabase import create_client

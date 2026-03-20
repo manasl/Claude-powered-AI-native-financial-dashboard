@@ -145,7 +145,12 @@ export function Header({ title, lastUpdated }: HeaderProps) {
           setJobState("idle");
           setActiveJob(null);
           setJobSummary(null);
-          router.refresh();
+          
+          if (success && activeJob === "enrich") {
+            window.location.reload();
+          } else {
+            router.refresh();
+          }
         }, 4500);
       } else {
         setJobError(msg);
@@ -302,6 +307,7 @@ function ConfirmModal({
   onCancel:  () => void;
 }) {
   const cfg  = JOB_CONFIG[type];
+
   const Icon = cfg.icon;
 
   return (

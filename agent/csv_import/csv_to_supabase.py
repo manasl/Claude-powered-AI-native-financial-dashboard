@@ -270,6 +270,29 @@ def main():
         counts["holdings"] = inserted_holdings
         print(f"✅  holdings: {inserted_holdings} rows")
 
+        # ── 3b. Write portfolio_snapshot.json for enrichment notebook ─────────
+        # Strips pct from account_categories to match the format notebook 02 writes
+        cat_summary_for_json = {
+            cat: {"value": info["value"], "positions": info["positions"]}
+            for cat, info in account_categories_json.items()
+        }
+        portfolio_export = {
+            "summary": {
+                "total_value": round(total_value, 2),
+                "total_cost_basis": round(total_cost_basis, 2),
+                "total_gain_loss": round(total_gain_loss, 2),
+                "total_positions": total_positions,
+                "brokerages": sorted({h.get("brokerage", "Unknown") for h in holdings_rows}),
+                "account_categories": cat_summary_for_json,
+            },
+            "holdings": holdings_rows,
+            "cash_accounts": [],
+        }
+        snapshot_path = AGENT_DIR / "portfolio_snapshot.json"
+        with open(snapshot_path, "w") as f:
+            json.dump(clean(portfolio_export), f, indent=2, default=str)
+        print(f"✅  portfolio_snapshot.json written → {snapshot_path}")
+
     # ── 4. Upsert transactions ─────────────────────────────────────────────────
     if txn_rows:
         # Remove raw_json to avoid JSON serialization issues in the batch;

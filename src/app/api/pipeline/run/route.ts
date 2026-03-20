@@ -22,10 +22,11 @@
  *   400  — invalid mode param
  */
 
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { spawn }       from "child_process";
 import path            from "path";
 import { createClient } from "@/lib/supabase/server";
+import { revalidatePath } from "next/cache";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs"; // must be Node.js for child_process
@@ -37,9 +38,9 @@ const PYTHON    = path.join(AGENT_DIR, ".venv", "bin", "python");
 
 /** Minimum minutes between runs per mode (rate limit) */
 const RATE_LIMIT_MINUTES: Record<string, number> = {
-  enrich:   5,
-  sync:    30,
-  analyze:  5,
+  enrich:   1,
+  sync:     1,
+  analyze:  1,
 };
 
 /** Server-side process kill timeout (ms) */
@@ -92,8 +93,9 @@ export async function GET(request: NextRequest) {
 
         if (lastRun) {
           const diffMins = (Date.now() - new Date(lastRun.run_at).getTime()) / 60_000;
-          const minWait  = RATE_LIMIT_MINUTES[mode] ?? 5;
-          if (diffMins < minWait) {
+          const minWait  = RATE_LIMIT_MINUTES[mode] ?? 1;
+          
+          if (diffMins < minWait && diffMins >= 0) {
             const wait = Math.ceil(minWait - diffMins);
             send({
               type:    "error",
@@ -197,6 +199,10 @@ export async function GET(request: NextRequest) {
               })
               .eq("id", requestId);
           } catch { /* non-fatal */ }
+        }
+
+        if (success) {
+          revalidatePath("/");
         }
 
         send({
