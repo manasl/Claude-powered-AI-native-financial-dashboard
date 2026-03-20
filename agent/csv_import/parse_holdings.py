@@ -18,6 +18,7 @@ ACCOUNT_NAME_MAP: list[tuple[str, str]] = [
     ("roth", "retirement"),
     ("ira", "retirement"),
     ("401k", "retirement"),
+    ("snap inc.", "retirement"),  # Snap Inc. company 401k (account 34337)
     ("joint wros", "taxable"),
     ("individual", "taxable"),
 ]

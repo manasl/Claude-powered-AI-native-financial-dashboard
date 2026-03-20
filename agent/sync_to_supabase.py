@@ -17,6 +17,7 @@ import json
 import logging
 import math
 import os
+import re
 import sys
 import argparse
 from datetime import datetime, date
@@ -139,6 +140,17 @@ def compute_account_category_summary(holdings: list, total_value: float) -> dict
 SKIP_TYPES = {"cash"}
 
 
+def is_valid_ticker(ticker: str) -> bool:
+    """Return True if ticker is enrichable by yfinance.
+    Filters out CUSIPs, freeform strings like 'Pending activity', etc.
+    """
+    if not ticker or " " in ticker:
+        return False
+    if ticker.startswith("-"):
+        return bool(re.match(r"^-[A-Z]+\d{6}[CP]\d+", ticker))
+    return bool(re.match(r"^[A-Z]{1,6}(\.[A-Z]{1,2})?$", ticker))
+
+
 def validate_enrichment_prices(
     holdings: list,
     enrichment_map: dict,
@@ -158,7 +170,7 @@ def validate_enrichment_prices(
         ticker = h.get("ticker")
         htype = h.get("type", "equity")
 
-        if not ticker or htype in SKIP_TYPES:
+        if not ticker or htype in SKIP_TYPES or not is_valid_ticker(ticker):
             continue
         if ticker in seen:
             continue
