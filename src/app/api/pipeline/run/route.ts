@@ -132,7 +132,7 @@ export async function GET(request: NextRequest) {
       try {
         // analyze mode has its own dedicated script (run_analyze.py) that skips
         // Plaid fetch/enrichment and only runs notebooks 04+05 + Supabase sync.
-        const script = mode === "analyze" ? "run_analyze.py" : "run_pipeline.py";
+        const script = mode === "analyze" ? "run_analyze.py" : "run_pipeline_fixed.py";
         const scriptArgs = mode === "analyze" ? [] : ["--mode", mode];
         proc = spawn(PYTHON, [script, ...scriptArgs], {
           cwd: AGENT_DIR,
