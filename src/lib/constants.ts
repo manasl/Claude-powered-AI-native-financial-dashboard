@@ -28,6 +28,7 @@ export const ACTION_CONFIG = {
   BUY: { bg: "#064e3b", text: "#22c55e", border: "#22c55e", label: "BUY" },
   SELL: { bg: "#450a0a", text: "#ef4444", border: "#ef4444", label: "SELL" },
   HOLD: { bg: "#422006", text: "#eab308", border: "#eab308", label: "HOLD" },
+  ROLL: { bg: "#1e1b4b", text: "#818cf8", border: "#4f46e5", label: "ROLL" },
 } as const;
 
 // ── Health color config ────────────────────────────────────────────────────

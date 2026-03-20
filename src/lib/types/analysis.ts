@@ -1,6 +1,6 @@
 // ── Analysis types — mirrors Claude's output schema ────────────────────────
 
-export type Action = "BUY" | "SELL" | "HOLD";
+export type Action = "BUY" | "SELL" | "HOLD" | "ROLL";
 export type Confidence = "high" | "medium" | "low";
 export type Urgency = "immediate" | "soon" | "no_rush";
 export type Health = "strong" | "moderate" | "weak";
